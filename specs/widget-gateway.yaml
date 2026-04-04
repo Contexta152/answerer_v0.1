@@ -1,0 +1,189 @@
+openapi: 3.0.3
+
+info:
+  title: Widget Gateway
+  version: 1.0.0
+  description: >
+    Public-facing gateway for the end-user Q&A widget. This is the only
+    service exposed to the public internet. It accepts widget ask requests,
+    enforces rate limiting, and proxies to the internal Answerer Service.
+    The widget key is forwarded to the Answerer Service for validation —
+    the gateway does not validate keys itself.
+
+components:
+
+  securitySchemes:
+
+    widgetKey:
+      type: apiKey
+      in: header
+      name: X-Widget-Key
+      description: >
+        Per-tenant API key issued at tenant creation by the Payment Service.
+        The gateway forwards this to the Answerer Service for validation.
+
+  schemas:
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable description
+
+paths:
+
+  /v1/ask/{tenant_id}:
+    post:
+      operationId: gatewayAsk
+      summary: Ask a question — returns a complete answer
+      description: >
+        Proxied to the Answerer Service. The widget key and tenant_id are
+        forwarded. The Answerer Service is the authority on key validity,
+        tenant suspension, and quota.
+      security:
+        - widgetKey: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answer, source]
+                properties:
+                  answer:
+                    type: string
+                  source:
+                    type: string
+                    enum: [rag, curated, guardrail, error]
+                  request_id:
+                    type: string
+                    format: uuid
+                    description: Cross-reference to the question log entry
+        '400':
+          description: Question exceeds max_question_chars or is empty
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing widget key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '402':
+          description: Tenant is suspended — quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: Answerer Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/ask/{tenant_id}/stream:
+    post:
+      operationId: gatewayAskStream
+      summary: Ask a question — streams the answer via SSE
+      description: >
+        Proxied to the Answerer Service as a streaming response.
+        The gateway passes the SSE stream through to the widget unchanged.
+      security:
+        - widgetKey: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+      responses:
+        '200':
+          description: SSE stream proxied from Answerer Service
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Stream of SSE events. Three event types:
+
+                  event: delta
+                  data: {"text": "..."}
+
+                  event: done
+                  data: {"source": "rag|curated|guardrail|error", "request_id": "uuid"}
+
+                  event: error
+                  data: {"code": "...", "message": "..."}
+        '400':
+          description: Question exceeds max_question_chars or is empty
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing widget key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '402':
+          description: Tenant is suspended — quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: Answerer Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

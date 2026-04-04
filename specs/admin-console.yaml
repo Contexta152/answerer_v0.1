@@ -1,0 +1,250 @@
+openapi: 3.0.3
+
+info:
+  title: Admin Console API
+  version: 1.0.0
+  description: >
+    API for the Client Admin Console. Handles two concerns:
+
+    1. Authentication — issues tenant-scoped JWTs to admin users. The
+       frontend uses these JWTs directly against the Answerer Service for
+       all KB management operations (settings, guardrails, curated answers,
+       analytics, question log). The admin console does not proxy those calls.
+
+    2. Quota management — receives quota pushes from the Vendor Console and
+       exposes the current quota to the frontend. The frontend compares this
+       against usage data from the Answerer Service to determine if suspension
+       is required.
+
+components:
+
+  securitySchemes:
+
+    adminJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT issued by this service on successful login. Claims include
+        tenant_id. Used to authenticate reads of quota data and to call
+        the Answerer Service directly.
+
+    vendorServiceKey:
+      type: apiKey
+      in: header
+      name: X-Service-Key
+      description: >
+        Shared secret used by the Vendor Console to authenticate inbound
+        quota push calls. Not exposed to end users or frontend clients.
+
+  schemas:
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable description
+
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token, expires_in]
+      properties:
+        access_token:
+          type: string
+          description: JWT for use against this service and the Answerer Service
+        refresh_token:
+          type: string
+          description: Opaque token used to obtain a new access token
+        expires_in:
+          type: integer
+          description: Access token lifetime in seconds
+
+    Quota:
+      type: object
+      required: [tenant_id, questions_quota, updated_at]
+      description: Flagged for enrichment in second pass
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        questions_quota:
+          type: integer
+          description: Maximum questions allowed in a rolling 30-day period
+        updated_at:
+          type: string
+          format: date-time
+          description: When this quota was last pushed from the Vendor Console
+
+paths:
+
+  # ── Authentication ───────────────────────────────────────────────────
+
+  /v1/auth/login:
+    post:
+      operationId: adminLogin
+      summary: Log in and receive a token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many failed attempts — temporarily locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/auth/refresh:
+    post:
+      operationId: adminRefresh
+      summary: Exchange a refresh token for a new token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: New token pair issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/auth/logout:
+    post:
+      operationId: adminLogout
+      summary: Invalidate the current refresh token
+      security:
+        - adminJWT: []
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Quota (read by frontend) ─────────────────────────────────────────
+
+  /v1/quota:
+    get:
+      operationId: getQuota
+      summary: Get the current quota for this tenant
+      description: >
+        Returns the quota most recently pushed by the Vendor Console.
+        The frontend compares this against usage from the Answerer Service
+        to determine if suspension is required.
+      security:
+        - adminJWT: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quota'
+        '404':
+          description: No quota has been set for this tenant yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Quota (inbound from Vendor Console) ──────────────────────────────
+
+  /v1/internal/quota/{tenant_id}:
+    put:
+      operationId: pushQuota
+      summary: Push a quota update for a tenant
+      description: >
+        Called by the Vendor Console when a payment is confirmed or a plan
+        changes. Replaces the stored quota for the tenant. The frontend
+        will read the updated value on its next call to GET /v1/quota.
+      security:
+        - vendorServiceKey: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [questions_quota]
+              properties:
+                questions_quota:
+                  type: integer
+                  description: New quota value — replaces the previous value
+      responses:
+        '204':
+          description: Quota updated
+        '400':
+          description: Invalid quota value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing service key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

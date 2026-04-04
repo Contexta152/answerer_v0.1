@@ -1,0 +1,218 @@
+openapi: 3.0.3
+
+info:
+  title: Payment Service — Outbound Events
+  version: 1.0.0
+  description: >
+    Defines the events the Payment Service sends to the Vendor Console when
+    subscription state changes. The Payment Service calls
+    POST /v1/internal/payments on the Vendor Console for each event.
+
+    The Payment Service is also responsible for:
+    - Calling POST /v1/tenants on the Answerer Service when a subscription
+      is created (to provision the tenant and receive the widget API key)
+    - Calling DELETE /v1/tenants/{tenant_id} on the Answerer Service when
+      a subscription is permanently cancelled
+
+    Those calls are defined in answerer-service.yaml. This document covers
+    only the Vendor Console notification events.
+
+    Idempotency:
+    The Payment Service must include an idempotency_key on every event. The
+    Vendor Console will ignore duplicate events with the same key. This
+    protects against double-processing if the Payment Service retries after
+    a network failure.
+
+components:
+
+  securitySchemes:
+
+    vendorServiceKey:
+      type: apiKey
+      in: header
+      name: X-Service-Key
+      description: >
+        Shared secret authenticating the Payment Service to the Vendor Console.
+
+  schemas:
+
+    BaseEvent:
+      type: object
+      required: [idempotency_key, event_type, tenant_id, occurred_at]
+      properties:
+        idempotency_key:
+          type: string
+          description: >
+            Unique key for this event. The Vendor Console ignores duplicate
+            events with the same key. Use the payment provider's event ID
+            (e.g. Stripe event ID) as this value.
+        event_type:
+          type: string
+          enum: [subscription_created, subscription_renewed, plan_changed, subscription_cancelled]
+        tenant_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+          description: When the payment event occurred at the provider
+
+    SubscriptionCreatedEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          description: >
+            Sent after the Payment Service has successfully provisioned the
+            tenant on the Answerer Service. The Vendor Console records the
+            tenant, sets the initial quota, and pushes it to the Admin Console.
+          required: [plan, questions_quota]
+          properties:
+            event_type:
+              type: string
+              enum: [subscription_created]
+            plan:
+              type: string
+              description: Plan identifier
+            questions_quota:
+              type: integer
+              description: Initial quota for the rolling 30-day period
+
+    SubscriptionRenewedEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          description: >
+            Sent when a subscription renews successfully. Quota remains the
+            same unless the plan has changed — use plan_changed for that.
+            The Vendor Console confirms the quota is still current and pushes
+            it to the Admin Console to reinstate if previously suspended.
+          required: [plan, questions_quota]
+          properties:
+            event_type:
+              type: string
+              enum: [subscription_renewed]
+            plan:
+              type: string
+            questions_quota:
+              type: integer
+
+    PlanChangedEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          description: >
+            Sent when a tenant upgrades or downgrades their plan mid-cycle.
+            The Vendor Console updates the quota immediately and pushes it
+            to the Admin Console.
+          required: [plan, questions_quota, previous_plan, previous_questions_quota]
+          properties:
+            event_type:
+              type: string
+              enum: [plan_changed]
+            plan:
+              type: string
+              description: New plan identifier
+            questions_quota:
+              type: integer
+              description: New quota
+            previous_plan:
+              type: string
+              description: Previous plan identifier
+            previous_questions_quota:
+              type: integer
+              description: Previous quota
+
+    SubscriptionCancelledEvent:
+      allOf:
+        - $ref: '#/components/schemas/BaseEvent'
+        - type: object
+          description: >
+            Sent when a subscription is cancelled. The Payment Service will
+            separately call DELETE /v1/tenants/{tenant_id} on the Answerer
+            Service if this is a hard delete. If it is a soft cancel
+            (access until end of billing period), immediate_suspension
+            will be false and the Vendor Console sets quota to 0 — the
+            Admin Console will suspend on next usage check.
+          required: [immediate_suspension]
+          properties:
+            event_type:
+              type: string
+              enum: [subscription_cancelled]
+            immediate_suspension:
+              type: boolean
+              description: >
+                If true, the Vendor Console sets quota to 0 immediately.
+                If false, the tenant keeps access until the billing period ends
+                — the Payment Service will send a final subscription_renewed
+                with questions_quota 0 at that point.
+
+paths:
+
+  # ── Outbound call to Vendor Console ─────────────────────────────────
+
+  /v1/internal/payments:
+    post:
+      operationId: notifyVendorConsole
+      summary: Notify the Vendor Console of a payment event
+      description: >
+        The Payment Service calls this endpoint on the Vendor Console for
+        every subscription lifecycle event. The request body is one of the
+        event schemas defined above, discriminated by event_type.
+      security:
+        - vendorServiceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/SubscriptionCreatedEvent'
+                - $ref: '#/components/schemas/SubscriptionRenewedEvent'
+                - $ref: '#/components/schemas/PlanChangedEvent'
+                - $ref: '#/components/schemas/SubscriptionCancelledEvent'
+              discriminator:
+                propertyName: event_type
+                mapping:
+                  subscription_created: '#/components/schemas/SubscriptionCreatedEvent'
+                  subscription_renewed: '#/components/schemas/SubscriptionRenewedEvent'
+                  plan_changed: '#/components/schemas/PlanChangedEvent'
+                  subscription_cancelled: '#/components/schemas/SubscriptionCancelledEvent'
+      responses:
+        '204':
+          description: Event accepted and processed
+        '400':
+          description: Invalid event payload
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, message]
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+        '401':
+          description: Invalid or missing service key
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, message]
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+        '409':
+          description: Duplicate event — idempotency_key already processed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, message]
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string

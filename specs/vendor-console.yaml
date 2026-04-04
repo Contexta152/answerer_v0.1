@@ -1,0 +1,456 @@
+openapi: 3.0.3
+
+info:
+  title: Vendor Console API
+  version: 1.0.0
+  description: >
+    API for the Vendor Console — the global superadmin surface. Handles four
+    concerns:
+
+    1. Authentication — issues JWTs to vendor admin users.
+
+    2. Payment events — receives inbound events from the Payment Service when
+       subscriptions are created, renewed, upgraded, downgraded, or cancelled.
+       On each event the vendor console updates the tenant quota and pushes it
+       to the Admin Console.
+
+    3. Quota management — stores and manages the authoritative quota per tenant.
+       Quota is pushed to the Admin Console on every change.
+
+    4. Cross-tenant visibility — provides an overview of all tenants, their
+       plans, quota, and suspension state. Usage data is read from the
+       Answerer Service using the service key.
+
+components:
+
+  securitySchemes:
+
+    vendorJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT issued by this service on successful login. For use by the
+        vendor admin UI only.
+
+    paymentServiceKey:
+      type: apiKey
+      in: header
+      name: X-Service-Key
+      description: >
+        Shared secret used by the Payment Service to authenticate inbound
+        payment event calls. Not exposed to the vendor admin UI.
+
+  schemas:
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable description
+
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token, expires_in]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+          description: Access token lifetime in seconds
+
+    TenantSummary:
+      type: object
+      required: [tenant_id, name, plan, questions_quota, suspended, created, quota_utilisation_pct, questions_7d, questions_30d, source_breakdown_7d, error_rate_7d_pct, avg_response_ms_7d, last_question_at, last_indexed_at]
+      description: >
+        Tenant overview for the vendor dashboard. Billing fields (plan, quota)
+        are owned by the vendor console. Activity and health fields are fetched
+        from the Answerer Service via GET /v1/admin/tenants/summary and merged
+        here before returning to the frontend.
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        plan:
+          type: string
+          description: Plan identifier from the Payment Service
+        questions_quota:
+          type: integer
+        suspended:
+          type: boolean
+        created:
+          type: string
+          format: date-time
+        quota_utilisation_pct:
+          type: number
+          format: float
+          description: questions_asked / questions_quota as a percentage (rolling 30 days)
+        questions_7d:
+          type: integer
+          description: Questions asked in the last 7 days
+        questions_30d:
+          type: integer
+          description: Questions asked in the last 30 days
+        source_breakdown_7d:
+          type: object
+          description: Question count by source over the last 7 days
+          required: [rag, curated, guardrail, error]
+          properties:
+            rag:
+              type: integer
+            curated:
+              type: integer
+            guardrail:
+              type: integer
+            error:
+              type: integer
+        error_rate_7d_pct:
+          type: number
+          format: float
+          description: Percentage of questions returning source "error" in the last 7 days
+        avg_response_ms_7d:
+          type: integer
+          nullable: true
+          description: Average total_ms from timing data over the last 7 days
+        last_question_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the most recent question — null if never used
+        last_indexed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the most recent completed index job
+
+    PaymentEvent:
+      type: object
+      required: [event_type, tenant_id, plan, questions_quota]
+      description: >
+        Payment event sent by the Payment Service. The vendor console uses
+        this to update the tenant quota and push it to the Admin Console.
+      properties:
+        event_type:
+          type: string
+          enum: [subscription_created, subscription_renewed, plan_changed, subscription_cancelled]
+        tenant_id:
+          type: string
+          format: uuid
+        plan:
+          type: string
+          description: Plan identifier
+        questions_quota:
+          type: integer
+          description: >
+            New quota for the tenant. For subscription_cancelled this will
+            be 0 — the Admin Console will suspend the tenant on next usage check.
+
+paths:
+
+  # ── Authentication ───────────────────────────────────────────────────
+
+  /v1/auth/login:
+    post:
+      operationId: vendorLogin
+      summary: Log in and receive a token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many failed attempts — temporarily locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/auth/refresh:
+    post:
+      operationId: vendorRefresh
+      summary: Exchange a refresh token for a new token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: New token pair issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/auth/logout:
+    post:
+      operationId: vendorLogout
+      summary: Invalidate the current refresh token
+      security:
+        - vendorJWT: []
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Tenant Overview (vendorJWT) ──────────────────────────────────────
+
+  /v1/tenants:
+    get:
+      operationId: listTenants
+      summary: List all tenants with plan and quota summary
+      security:
+        - vendorJWT: []
+      parameters:
+        - name: suspended
+          in: query
+          schema:
+            type: boolean
+          description: Filter by suspension state
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TenantSummary'
+                  total:
+                    type: integer
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/tenants/{tenant_id}:
+    get:
+      operationId: getVendorTenant
+      summary: Get a single tenant summary
+      security:
+        - vendorJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSummary'
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Quota Management (vendorJWT) ─────────────────────────────────────
+
+  /v1/tenants/{tenant_id}/quota:
+    get:
+      operationId: getVendorTenantQuota
+      summary: Get the current quota for a tenant
+      security:
+        - vendorJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tenant_id, questions_quota, updated_at]
+                properties:
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  questions_quota:
+                    type: integer
+                  updated_at:
+                    type: string
+                    format: date-time
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      operationId: setVendorTenantQuota
+      summary: Manually override the quota for a tenant
+      description: >
+        Allows the vendor admin to manually adjust quota outside of the
+        normal payment flow. Pushes the updated quota to the Admin Console.
+      security:
+        - vendorJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [questions_quota]
+              properties:
+                questions_quota:
+                  type: integer
+      responses:
+        '204':
+          description: Quota updated and pushed to Admin Console
+        '400':
+          description: Invalid quota value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Payment Events (inbound from Payment Service) ────────────────────
+
+  /v1/internal/payments:
+    post:
+      operationId: receivePaymentEvent
+      summary: Receive a payment event from the Payment Service
+      description: >
+        Called by the Payment Service when a subscription is created, renewed,
+        upgraded, downgraded, or cancelled. The vendor console updates the
+        tenant quota and pushes it to the Admin Console.
+
+        For subscription_cancelled, quota is set to 0. The Admin Console will
+        detect this on the next usage check and suspend the tenant via the
+        Answerer Service.
+      security:
+        - paymentServiceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentEvent'
+      responses:
+        '204':
+          description: Event accepted and processed
+        '400':
+          description: Invalid event payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing service key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

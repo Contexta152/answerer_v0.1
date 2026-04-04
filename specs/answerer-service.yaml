@@ -1,0 +1,1453 @@
+openapi: 3.0.3
+
+info:
+  title: Answerer Service
+  version: 1.0.0
+  description: >
+    Internal API for the Answerer Service. Serves three distinct callers:
+    the Payment Service (tenant lifecycle, crawl, index), the Admin Console
+    (tenant management, KB configuration, analytics), and the end-user Widget
+    (ask only). All operations are scoped to a tenant_id.
+
+components:
+
+  securitySchemes:
+
+    serviceKey:
+      type: apiKey
+      in: header
+      name: X-Service-Key
+      description: >
+        Shared secret between payment service and answerer service.
+        Used for tenant lifecycle, crawl, index, and widget key issuance.
+
+    adminJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT issued to a tenant admin. Claims include tenant_id — the
+        answerer service validates this and scopes all operations to
+        that tenant. Cannot access other tenants' data.
+
+    widgetKey:
+      type: apiKey
+      in: header
+      name: X-Widget-Key
+      description: >
+        Per-tenant API key issued at tenant creation. Used exclusively
+        by the end-user widget. Scoped to ask only. Rate limited per
+        tenant quota.
+
+  schemas:
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code (e.g. "tenant_not_found")
+        message:
+          type: string
+          description: Human-readable description
+        detail:
+          type: object
+          additionalProperties: true
+          description: Optional additional context
+
+    Tenant:
+      type: object
+      required: [id, name, created, suspended]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        created:
+          type: string
+          format: date-time
+        suspended:
+          type: boolean
+
+    TenantCreated:
+      allOf:
+        - $ref: '#/components/schemas/Tenant'
+        - type: object
+          required: [widget_api_key]
+          properties:
+            widget_api_key:
+              type: string
+              description: >
+                Only returned on creation. Store it — it cannot be retrieved again.
+
+    Usage:
+      type: object
+      required: [period_start, period_end, questions_asked, questions_quota, tokens_used, suspended]
+      description: Flagged for enrichment in second pass
+      properties:
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        questions_asked:
+          type: integer
+        questions_quota:
+          type: integer
+        tokens_used:
+          type: integer
+        suspended:
+          type: boolean
+
+    Settings:
+      type: object
+      required: [top_k, score_threshold, curated_threshold, max_question_chars, chunk_size, chunk_overlap]
+      properties:
+        top_k:
+          type: integer
+          default: 8
+        score_threshold:
+          type: number
+          format: float
+          default: 0.0
+        curated_threshold:
+          type: number
+          format: float
+          default: 0.92
+        max_question_chars:
+          type: integer
+          default: 1500
+        chunk_size:
+          type: integer
+          default: 200
+        chunk_overlap:
+          type: integer
+          default: 60
+
+    Guardrail:
+      type: object
+      required: [id, name, seeds, response, threshold, enabled, created]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        seeds:
+          type: array
+          items:
+            type: string
+          description: Phrases that trigger this guardrail
+        response:
+          type: string
+          description: Response returned when guardrail is triggered
+        threshold:
+          type: number
+          format: float
+        enabled:
+          type: boolean
+        created:
+          type: string
+          format: date-time
+
+    CuratedAnswer:
+      type: object
+      required: [id, question, answer, created]
+      properties:
+        id:
+          type: string
+          format: uuid
+        question:
+          type: string
+        answer:
+          type: string
+        created:
+          type: string
+          format: date-time
+
+    Chunk:
+      type: object
+      required: [source, score, tokens, text]
+      properties:
+        source:
+          type: string
+          description: URL or document identifier
+        score:
+          type: number
+          format: float
+        tokens:
+          type: integer
+        text:
+          type: string
+
+    Timing:
+      type: object
+      properties:
+        curated_check_ms:
+          type: integer
+          nullable: true
+        embed_ms:
+          type: integer
+          nullable: true
+        vector_search_ms:
+          type: integer
+          nullable: true
+        llm_ms:
+          type: integer
+          nullable: true
+        total_ms:
+          type: integer
+          nullable: true
+
+    QuestionLogEntry:
+      type: object
+      required: [request_id, timestamp, question, word_count]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        question:
+          type: string
+        word_count:
+          type: integer
+        source:
+          type: string
+          nullable: true
+          enum: [rag, curated, guardrail, error]
+        answer:
+          type: string
+          nullable: true
+        answer_tokens:
+          type: integer
+          nullable: true
+        curated_match_type:
+          type: string
+          nullable: true
+        matched_question:
+          type: string
+          nullable: true
+        guardrail_name:
+          type: string
+          nullable: true
+        chunks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Chunk'
+        prompt_tokens:
+          type: integer
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        timing:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Timing'
+
+    Job:
+      type: object
+      required: [job_id, status, created]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        created:
+          type: string
+          format: date-time
+        started:
+          type: string
+          format: date-time
+          nullable: true
+        completed:
+          type: string
+          format: date-time
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        progress:
+          type: object
+          nullable: true
+          properties:
+            pages_crawled:
+              type: integer
+            pages_total:
+              type: integer
+              nullable: true
+
+    TenantActivitySummary:
+      type: object
+      required: [tenant_id, name, suspended, quota_utilisation_pct, questions_7d, questions_30d, source_breakdown_7d, error_rate_7d_pct, avg_response_ms_7d, last_question_at, last_indexed_at]
+      description: >
+        Per-tenant activity and health summary for the vendor dashboard.
+        Returned as an array by GET /v1/admin/tenants/summary.
+        Flagged for enrichment in second pass.
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        suspended:
+          type: boolean
+        quota_utilisation_pct:
+          type: number
+          format: float
+          description: questions_asked / questions_quota as a percentage (rolling 30 days)
+        questions_7d:
+          type: integer
+          description: Questions asked in the last 7 days
+        questions_30d:
+          type: integer
+          description: Questions asked in the last 30 days
+        source_breakdown_7d:
+          type: object
+          description: Question count by source over the last 7 days
+          required: [rag, curated, guardrail, error]
+          properties:
+            rag:
+              type: integer
+            curated:
+              type: integer
+            guardrail:
+              type: integer
+            error:
+              type: integer
+        error_rate_7d_pct:
+          type: number
+          format: float
+          description: Percentage of questions returning source "error" in the last 7 days
+        avg_response_ms_7d:
+          type: integer
+          nullable: true
+          description: Average total_ms from timing data over the last 7 days
+        last_question_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the most recent question — null if never used
+        last_indexed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the most recent completed index job
+
+paths:
+
+  # ── Vendor Summary (serviceKey only) ────────────────────────────────
+
+  /v1/admin/tenants/summary:
+    get:
+      operationId: getVendorTenantsSummary
+      summary: Get activity and health summary across all tenants
+      description: >
+        Returns one TenantActivitySummary per tenant. Intended for the
+        vendor console dashboard. Single call replaces N per-tenant usage
+        calls. Accessible only with the service key.
+      security:
+        - serviceKey: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TenantActivitySummary'
+        '401':
+          description: Invalid or missing service key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Tenant Lifecycle (serviceKey only) ──────────────────────────────
+
+  /v1/tenants:
+    post:
+      operationId: createTenant
+      summary: Create a tenant
+      security:
+        - serviceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: Tenant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantCreated'
+        '409':
+          description: Tenant already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing service key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/tenants/{tenant_id}:
+    get:
+      operationId: getTenant
+      summary: Get a tenant
+      security:
+        - serviceKey: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing service key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: deleteTenant
+      summary: Delete a tenant and all associated data
+      security:
+        - serviceKey: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted — no content returned
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing service key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Crawl Jobs (serviceKey only) ────────────────────────────────────
+
+  /v1/tenants/{tenant_id}/crawl:
+    post:
+      operationId: startCrawl
+      summary: Start a crawl job
+      security:
+        - serviceKey: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  format: uri
+                max_pages:
+                  type: integer
+                  default: 500
+      responses:
+        '202':
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '409':
+          description: A crawl job is already running for this tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing service key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/tenants/{tenant_id}/crawl/{job_id}:
+    get:
+      operationId: getCrawlStatus
+      summary: Get crawl job status
+      security:
+        - serviceKey: []
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          description: Job or tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: stopCrawl
+      summary: Stop a running crawl job
+      security:
+        - serviceKey: []
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Job stopped
+        '404':
+          description: Job or tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Index Jobs (serviceKey only) ─────────────────────────────────────
+
+  /v1/tenants/{tenant_id}/index:
+    post:
+      operationId: startIndex
+      summary: Start an index job
+      security:
+        - serviceKey: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [crawl_job_id]
+              properties:
+                crawl_job_id:
+                  type: string
+                  format: uuid
+                  description: The completed crawl job to index
+      responses:
+        '202':
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '409':
+          description: An index job is already running for this tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing service key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Tenant or crawl job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/tenants/{tenant_id}/index/{job_id}:
+    get:
+      operationId: getIndexStatus
+      summary: Get index job status
+      security:
+        - serviceKey: []
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          description: Job or tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Tenant Management (adminJWT) ─────────────────────────────────────
+
+  /v1/tenants/{tenant_id}/usage:
+    get:
+      operationId: getTenantUsage
+      summary: Get rolling 30-day usage for this tenant
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usage'
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/tenants/{tenant_id}/suspend:
+    post:
+      operationId: suspendTenant
+      summary: Suspend a tenant — widget ask requests will be rejected
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Tenant suspended
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/tenants/{tenant_id}/reinstate:
+    post:
+      operationId: reinstateTenant
+      summary: Reinstate a suspended tenant
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Tenant reinstated
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Settings (adminJWT) ──────────────────────────────────────────────
+
+  /v1/tenants/{tenant_id}/settings:
+    get:
+      operationId: getSettings
+      summary: Get tenant settings
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      operationId: updateSettings
+      summary: Replace tenant settings
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Settings'
+      responses:
+        '200':
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+        '400':
+          description: Invalid settings values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Guardrails (adminJWT) ────────────────────────────────────────────
+
+  /v1/tenants/{tenant_id}/guardrails:
+    get:
+      operationId: listGuardrails
+      summary: List all guardrails
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Guardrail'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      operationId: createGuardrail
+      summary: Create a guardrail
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, seeds, response, threshold]
+              properties:
+                name:
+                  type: string
+                seeds:
+                  type: array
+                  items:
+                    type: string
+                response:
+                  type: string
+                threshold:
+                  type: number
+                  format: float
+      responses:
+        '201':
+          description: Guardrail created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guardrail'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/tenants/{tenant_id}/guardrails/{guardrail_id}:
+    put:
+      operationId: updateGuardrail
+      summary: Update a guardrail
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: guardrail_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                seeds:
+                  type: array
+                  items:
+                    type: string
+                response:
+                  type: string
+                threshold:
+                  type: number
+                  format: float
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated guardrail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guardrail'
+        '404':
+          description: Guardrail not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: deleteGuardrail
+      summary: Delete a guardrail
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: guardrail_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: Guardrail not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Curated Answers (adminJWT) ───────────────────────────────────────
+
+  /v1/tenants/{tenant_id}/curated:
+    get:
+      operationId: listCuratedAnswers
+      summary: List all curated answers
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CuratedAnswer'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      operationId: createCuratedAnswer
+      summary: Create a curated answer
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question, answer]
+              properties:
+                question:
+                  type: string
+                answer:
+                  type: string
+      responses:
+        '201':
+          description: Curated answer created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CuratedAnswer'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/tenants/{tenant_id}/curated/{curated_id}:
+    put:
+      operationId: updateCuratedAnswer
+      summary: Update a curated answer
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: curated_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question:
+                  type: string
+                answer:
+                  type: string
+      responses:
+        '200':
+          description: Updated curated answer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CuratedAnswer'
+        '404':
+          description: Curated answer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: deleteCuratedAnswer
+      summary: Delete a curated answer
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: curated_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: Curated answer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Question Log (adminJWT) ──────────────────────────────────────────
+
+  /v1/tenants/{tenant_id}/qlog:
+    get:
+      operationId: queryQuestionLog
+      summary: Query the question log
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [rag, curated, guardrail, error]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 500
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QuestionLogEntry'
+                  total:
+                    type: integer
+                    description: Total matching entries (for pagination)
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Analytics (adminJWT) ─────────────────────────────────────────────
+
+  /v1/tenants/{tenant_id}/analytics:
+    get:
+      operationId: getAnalytics
+      summary: Get analytics summary for a time range
+      description: Flagged for enrichment in second pass
+      security:
+        - adminJWT: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: OK — schema to be enriched in second pass
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Placeholder — detail to be defined
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Widget — Ask (widgetKey) ─────────────────────────────────────────
+
+  /v1/tenants/{tenant_id}/ask:
+    post:
+      operationId: ask
+      summary: Ask a question — returns a complete answer
+      security:
+        - widgetKey: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answer, source]
+                properties:
+                  answer:
+                    type: string
+                  source:
+                    type: string
+                    enum: [rag, curated, guardrail, error]
+                  request_id:
+                    type: string
+                    format: uuid
+                    description: Cross-reference to the question log entry
+        '400':
+          description: Question exceeds max_question_chars or is empty
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '402':
+          description: Tenant is suspended — quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing widget key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/tenants/{tenant_id}/ask/stream:
+    post:
+      operationId: askStream
+      summary: Ask a question — streams the answer via SSE
+      security:
+        - widgetKey: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Stream of SSE events. Three event types:
+
+                  event: delta
+                  data: {"text": "..."}
+
+                  event: done
+                  data: {"source": "rag|curated|guardrail|error", "request_id": "uuid"}
+
+                  event: error
+                  data: {"code": "...", "message": "..."}
+        '400':
+          description: Question exceeds max_question_chars or is empty
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '402':
+          description: Tenant is suspended — quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid or missing widget key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

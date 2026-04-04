@@ -1,0 +1,43 @@
+version: "3.9"
+
+# Stub servers for all five services.
+# Run with: docker compose -f docker-compose.stubs.yml up
+#
+# Ports:
+#   4010 — Answerer Service
+#   4011 — Widget Gateway
+#   4012 — Admin Console
+#   4013 — Vendor Console
+
+services:
+
+  answerer-stub:
+    build:
+      context: .
+      dockerfile: stubs/answerer/Dockerfile
+    ports:
+      - "4010:4010"
+
+  widget-gateway-stub:
+    image: stoplight/prism:4
+    command: mock /specs/widget-gateway.yaml --host 0.0.0.0 --port 4011 --dynamic
+    volumes:
+      - ./specs:/specs:ro
+    ports:
+      - "4011:4011"
+
+  admin-console-stub:
+    image: stoplight/prism:4
+    command: mock /specs/admin-console.yaml --host 0.0.0.0 --port 4012 --dynamic
+    volumes:
+      - ./specs:/specs:ro
+    ports:
+      - "4012:4012"
+
+  vendor-console-stub:
+    image: stoplight/prism:4
+    command: mock /specs/vendor-console.yaml --host 0.0.0.0 --port 4013 --dynamic
+    volumes:
+      - ./specs:/specs:ro
+    ports:
+      - "4013:4013"

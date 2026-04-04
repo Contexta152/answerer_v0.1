@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+
+  answerer-stub:
+    build:
+      context: .
+      dockerfile: stubs/answerer/Dockerfile
+    ports:
+      - "4010"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--header=X-Service-Key: test-key", "http://localhost:4010/v1/admin/tenants/summary"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  tests:
+    build:
+      context: .
+      dockerfile: tests/Dockerfile
+    environment:
+      ANSWERER_BASE_URL: http://answerer-stub:4010
+    depends_on:
+      answerer-stub:
+        condition: service_healthy
