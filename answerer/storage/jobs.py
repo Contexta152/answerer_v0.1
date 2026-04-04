@@ -16,7 +16,8 @@ def _row_to_job(row) -> Job:
         if isinstance(p, str):
             p = json.loads(p)
         progress = JobProgress(
-            pages_crawled=p.get("pages_crawled", 0),
+            pages_crawled=p.get("pages_crawled"),
+            pages_indexed=p.get("pages_indexed"),
             pages_total=p.get("pages_total"),
         )
     return Job(

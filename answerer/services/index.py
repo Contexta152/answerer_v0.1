@@ -5,6 +5,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from uuid import UUID
 
 import vertexai
@@ -18,7 +19,42 @@ from storage import qdrant
 logger = logging.getLogger(__name__)
 
 _EMBEDDING_MODEL = "text-embedding-004"
-_EMBED_BATCH_SIZE = 250  # Vertex AI per-request limit
+_EMBED_BATCH_SIZE = 20  # Keep total tokens per request well under the 20k limit
+
+
+class _TextExtractor(HTMLParser):
+    """Strip HTML tags and return visible text content."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip = False
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag in ("script", "style", "noscript"):
+            self._skip = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("script", "style", "noscript"):
+            self._skip = False
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            stripped = data.strip()
+            if stripped:
+                self._parts.append(stripped)
+
+    def get_text(self) -> str:
+        return " ".join(self._parts)
+
+
+def _extract_text(html: str) -> str:
+    extractor = _TextExtractor()
+    try:
+        extractor.feed(html)
+    except Exception:
+        pass
+    return extractor.get_text()
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
@@ -59,9 +95,8 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
         pages_total = len(pages)
 
         for idx, page in enumerate(pages, start=1):
-            chunks = _chunk_text(
-                page["content"], settings.chunk_size, settings.chunk_overlap
-            )
+            text = _extract_text(page["content"])
+            chunks = _chunk_text(text, settings.chunk_size, settings.chunk_overlap)
             if not chunks:
                 continue
 
@@ -80,14 +115,14 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
             await jobs_storage.update_job_status(
                 job_id,
                 "running",
-                progress={"pages_crawled": idx, "pages_total": pages_total},
+                progress={"pages_indexed": idx, "pages_total": pages_total},
             )
 
         await jobs_storage.update_job_status(
             job_id,
             "completed",
             completed=datetime.now(timezone.utc),
-            progress={"pages_crawled": pages_total, "pages_total": pages_total},
+            progress={"pages_indexed": pages_total, "pages_total": pages_total},
         )
     except Exception as exc:
         logger.exception("Index job %s failed for tenant %s", job_id, tenant_id)

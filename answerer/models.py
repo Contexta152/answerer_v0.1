@@ -92,7 +92,8 @@ class QuestionLogEntry(BaseModel):
 
 
 class JobProgress(BaseModel):
-    pages_crawled: int
+    pages_crawled: Optional[int] = None
+    pages_indexed: Optional[int] = None
     pages_total: Optional[int] = None
 
 
