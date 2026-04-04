@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Console</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #222; }
+
+    /* Login */
+    #login-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh;
+    }
+    .login-card {
+      background: #fff; border-radius: 8px; padding: 40px;
+      width: 360px; box-shadow: 0 2px 12px rgba(0,0,0,.1);
+    }
+    .login-card h1 { font-size: 1.4rem; margin-bottom: 24px; }
+    .login-card label { display: block; font-size: .85rem; font-weight: 600; margin-bottom: 4px; }
+    .login-card input {
+      width: 100%; padding: 10px 12px; border: 1px solid #ddd;
+      border-radius: 6px; font-size: .95rem; margin-bottom: 16px;
+    }
+    .login-card input:focus { outline: 2px solid #0ea5e9; border-color: transparent; }
+    .btn {
+      display: inline-block; padding: 10px 20px; background: #0ea5e9;
+      color: #fff; border: none; border-radius: 6px; font-size: .95rem;
+      cursor: pointer; width: 100%;
+    }
+    .btn:hover { background: #0284c7; }
+    .btn:disabled { background: #7dd3fc; cursor: default; }
+    .error-msg { color: #dc2626; font-size: .85rem; margin-top: 12px; }
+
+    /* Dashboard */
+    #dashboard { display: none; }
+    header {
+      background: #fff; border-bottom: 1px solid #e5e5e5;
+      padding: 14px 32px; display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 700; }
+    .logout-btn {
+      background: none; border: 1px solid #ddd; border-radius: 6px;
+      padding: 6px 14px; font-size: .85rem; cursor: pointer;
+    }
+    .logout-btn:hover { background: #f5f5f5; }
+
+    main { padding: 32px; max-width: 800px; margin: 0 auto; }
+
+    .card {
+      background: #fff; border-radius: 8px; padding: 28px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.07); margin-bottom: 24px;
+    }
+    .card h2 { font-size: 1rem; font-weight: 700; margin-bottom: 16px; }
+
+    .info-row { display: flex; gap: 8px; margin-bottom: 8px; font-size: .9rem; }
+    .info-label { font-weight: 600; min-width: 130px; color: #555; }
+    .info-value { color: #222; word-break: break-all; }
+
+    .action-btn {
+      padding: 8px 18px; background: #0ea5e9; color: #fff;
+      border: none; border-radius: 6px; font-size: .88rem; cursor: pointer;
+      margin-top: 12px;
+    }
+    .action-btn:hover { background: #0284c7; }
+    .action-btn:disabled { background: #7dd3fc; cursor: default; }
+
+    .usage-result {
+      margin-top: 16px; padding: 14px; background: #f0f9ff;
+      border-radius: 6px; font-size: .88rem; display: none;
+    }
+    .usage-result.error { background: #fef2f2; color: #991b1b; }
+
+    .loading { color: #999; font-size: .88rem; }
+  </style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>Admin Console</h1>
+    <label for="email">Email</label>
+    <input type="email" id="email" placeholder="admin@example.com" autocomplete="username">
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password">
+    <button class="btn" id="login-btn" onclick="login()">Sign in</button>
+    <div class="error-msg" id="login-error"></div>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard">
+  <header>
+    <h1>Admin Console</h1>
+    <div style="display:flex;align-items:center;gap:16px">
+      <span id="logged-in-as" style="font-size:.85rem;color:#666"></span>
+      <button class="logout-btn" onclick="logout()">Sign out</button>
+    </div>
+  </header>
+  <main>
+    <!-- Tenant info -->
+    <div class="card">
+      <h2>Tenant</h2>
+      <div class="info-row">
+        <span class="info-label">Tenant ID</span>
+        <span class="info-value" id="tenant-id">—</span>
+      </div>
+    </div>
+
+    <!-- Quota -->
+    <div class="card">
+      <h2>Quota</h2>
+      <div id="quota-content" class="loading">Loading…</div>
+    </div>
+
+    <!-- Usage check -->
+    <div class="card">
+      <h2>Usage (from Answerer Service)</h2>
+      <p style="font-size:.88rem;color:#555">Check live usage data directly from the Answerer Service using your JWT.</p>
+      <button class="action-btn" id="check-usage-btn" onclick="checkUsage()">Check Usage</button>
+      <div class="usage-result" id="usage-result"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+const ANSWERER_URL = 'https://answerer-848760828618.us-central1.run.app';
+const BASE = '';
+
+let accessToken = null;
+let tenantId = null;
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+function parseJWT(token) {
+  try {
+    const payload = token.split('.')[1];
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch (_) { return {}; }
+}
+
+async function login() {
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  try {
+    const res = await fetch(`${BASE}/v1/auth/login`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email, password}),
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.detail || 'Login failed'; return; }
+    accessToken = data.access_token;
+    const claims = parseJWT(accessToken);
+    tenantId = claims.tenant_id || null;
+    document.getElementById('logged-in-as').textContent = email;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    document.getElementById('tenant-id').textContent = tenantId || '—';
+    loadQuota();
+  } catch (e) {
+    errEl.textContent = 'Network error';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign in';
+  }
+}
+
+async function logout() {
+  try {
+    await fetch(`${BASE}/v1/auth/logout`, {
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${accessToken}`},
+    });
+  } catch (_) {}
+  accessToken = null;
+  tenantId = null;
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('password').value = '';
+  document.getElementById('usage-result').style.display = 'none';
+}
+
+document.getElementById('password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') login();
+});
+
+// ── Quota ──────────────────────────────────────────────────────────────────────
+
+async function loadQuota() {
+  const el = document.getElementById('quota-content');
+  el.className = 'loading';
+  el.textContent = 'Loading…';
+  try {
+    const res = await fetch(`${BASE}/v1/quota`, {
+      headers: {'Authorization': `Bearer ${accessToken}`},
+    });
+    if (res.status === 401) { logout(); return; }
+    if (res.status === 404) {
+      el.className = '';
+      el.innerHTML = '<span style="color:#999;font-size:.88rem">No quota has been set yet.</span>';
+      return;
+    }
+    const data = await res.json();
+    el.className = '';
+    el.innerHTML = `
+      <div class="info-row">
+        <span class="info-label">Questions quota</span>
+        <span class="info-value"><strong>${data.questions_quota.toLocaleString()}</strong> per 30 days</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Last updated</span>
+        <span class="info-value">${new Date(data.updated_at).toLocaleString()}</span>
+      </div>`;
+  } catch (e) {
+    el.className = '';
+    el.textContent = 'Failed to load quota.';
+  }
+}
+
+// ── Usage ──────────────────────────────────────────────────────────────────────
+
+async function checkUsage() {
+  if (!tenantId) { alert('No tenant ID in token.'); return; }
+  const btn = document.getElementById('check-usage-btn');
+  const resultEl = document.getElementById('usage-result');
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  resultEl.style.display = 'none';
+  resultEl.className = 'usage-result';
+  try {
+    const res = await fetch(`${ANSWERER_URL}/v1/tenants/${tenantId}/usage`, {
+      headers: {'Authorization': `Bearer ${accessToken}`},
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      resultEl.className = 'usage-result error';
+      resultEl.textContent = `Error ${res.status}: ${data.detail || JSON.stringify(data)}`;
+    } else {
+      resultEl.innerHTML = `<pre style="white-space:pre-wrap;font-size:.82rem">${JSON.stringify(data, null, 2)}</pre>`;
+    }
+  } catch (e) {
+    resultEl.className = 'usage-result error';
+    resultEl.textContent = 'Network error reaching Answerer Service.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Check Usage';
+    resultEl.style.display = 'block';
+  }
+}
+</script>
+</body>
+</html>
