@@ -24,30 +24,29 @@ Read it before touching any code.
                         │       Payment Service        │
                         │  (stub for now — to be built)│
                         └──────┬───────────┬──────────┘
-                               │ service   │ payment
-                               │ key       │ confirmed
-                               │           │ event
-               ┌───────────────▼─┐   ┌────▼──────────────┐
-               │ Answerer Service │   │   Vendor Console   │
-               │   (Python)       │   │   (superadmin)     │
-               └──┬──────────┬───┘   └────────┬──────────┘
-                  │ adminJWT │ widgetKey        │ quota push
-                  │          │            ┌────▼──────────────┐
-                  │          │            │   Admin Console    │
-                  │          │            │  (per-tenant UI)   │
-                  │          │            └────────┬──────────┘
-                  │          │                     │ adminJWT
-                  │◄─────────┼─────────────────────┘
-                  │          │
-          ┌───────▼──────────▼──────────┐
-          │      Widget Gateway          │
-          │  (public internet boundary)  │
-          └───────────────┬─────────────┘
-                          │ widgetKey
-                   ┌──────▼──────┐
-                   │  End-User   │
-                   │   Widget    │
-                   └─────────────┘
+                     service   │           │ payment
+                     key       │           │ confirmed event
+                               │           │
+               ┌───────────────▼──┐  ┌────▼──────────────┐
+               │  Answerer Service │  │   Vendor Console   │
+               │    (Python)       │  │   (superadmin)     │
+               └──────▲──────▲────┘  └────────┬──────────┘
+               adminJWT│      │widgetKey       │ quota push
+                        │      │          ┌────▼──────────────┐
+                        │      │          │   Admin Console    │
+                        └──────┼──────────┤  (per-tenant UI)   │
+                               │          └───────────────────┘
+                               │
+                    ┌──────────┴─────────────┐
+                    │     Widget Gateway       │
+                    │  (public internet        │
+                    │   boundary)              │
+                    └────────────┬────────────┘
+                                 │ widgetKey
+                          ┌──────▼──────┐
+                          │  End-User   │
+                          │   Widget    │
+                          └─────────────┘
 ```
 
 ---
@@ -358,12 +357,27 @@ When behaviour is ambiguous, the spec wins — not the code.
 
 ---
 
+## Infrastructure
+
+| Resource | Detail |
+|---|---|
+| GCP Project | `project-3a1ab238-6b95-4034-8c6` |
+| Region | `us-central1` |
+| Cloud SQL instance | `answerer-db` — Postgres 15, `db-g1-small`, zonal |
+| Database | `answerer`, user `answerer`, password in Secret Manager (`answerer-db-password`) |
+| Cloud SQL connection name | `project-3a1ab238-6b95-4034-8c6:us-central1:answerer-db` |
+| Vertex AI | `text-embedding-004` (embeddings), `gemini-1.5-flash` (LLM) |
+| Qdrant | Embedded in container — no separate service |
+| Cloud Run service | `answerer`, `us-central1`, connects to Cloud SQL via Unix socket |
+
+---
+
 ## Key Decisions Log
 
 | Decision | Choice | Reason |
 |---|---|---|
 | Payment provider | LemonSqueezy (likely) | Simpler than Stripe for SaaS licensing, decision not final |
-| Payment Service | Stub only for now | Rust prototype is not being used. Build stub, real service later |
+| Payment Service | Stub only for now | Build stub, real service later |
 | Vector store | Qdrant (embedded) | Runs in-process, no separate service |
 | Tenant isolation in Qdrant | One collection per tenant | Structural isolation, no filter bugs |
 | Database | Google Cloud SQL (Postgres) | Managed, reliable, familiar |
