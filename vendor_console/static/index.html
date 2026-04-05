@@ -4,100 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vendor Console</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #222; }
-
-    /* Login */
-    #login-screen {
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh;
-    }
-    .login-card {
-      background: #fff; border-radius: 8px; padding: 40px;
-      width: 360px; box-shadow: 0 2px 12px rgba(0,0,0,.1);
-    }
-    .login-card h1 { font-size: 1.4rem; margin-bottom: 24px; }
-    .login-card label { display: block; font-size: .85rem; font-weight: 600; margin-bottom: 4px; }
-    .login-card input {
-      width: 100%; padding: 10px 12px; border: 1px solid #ddd;
-      border-radius: 6px; font-size: .95rem; margin-bottom: 16px;
-    }
-    .login-card input:focus { outline: 2px solid #4f46e5; border-color: transparent; }
-    .btn {
-      display: inline-block; padding: 10px 20px; background: #4f46e5;
-      color: #fff; border: none; border-radius: 6px; font-size: .95rem;
-      cursor: pointer; width: 100%;
-    }
-    .btn:hover { background: #4338ca; }
-    .btn:disabled { background: #a5b4fc; cursor: default; }
-    .error-msg { color: #dc2626; font-size: .85rem; margin-top: 12px; }
-
-    /* Dashboard */
-    #dashboard { display: none; }
-    header {
-      background: #fff; border-bottom: 1px solid #e5e5e5;
-      padding: 14px 32px; display: flex; align-items: center; justify-content: space-between;
-    }
-    header h1 { font-size: 1.1rem; font-weight: 700; }
-    header span { font-size: .85rem; color: #666; }
-    .logout-btn {
-      background: none; border: 1px solid #ddd; border-radius: 6px;
-      padding: 6px 14px; font-size: .85rem; cursor: pointer;
-    }
-    .logout-btn:hover { background: #f5f5f5; }
-
-    main { padding: 32px; max-width: 1200px; margin: 0 auto; }
-    .section-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 16px;
-    }
-    .section-header h2 { font-size: 1rem; font-weight: 700; }
-    .refresh-btn {
-      background: none; border: 1px solid #ddd; border-radius: 6px;
-      padding: 6px 14px; font-size: .83rem; cursor: pointer;
-    }
-    .refresh-btn:hover { background: #f5f5f5; }
-
-    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
-    thead { background: #f9f9f9; }
-    th { padding: 11px 14px; text-align: left; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #666; border-bottom: 1px solid #e5e5e5; }
-    td { padding: 12px 14px; font-size: .88rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #fafafa; }
-
-    .badge {
-      display: inline-block; padding: 2px 8px; border-radius: 999px;
-      font-size: .75rem; font-weight: 600;
-    }
-    .badge-ok { background: #dcfce7; color: #166534; }
-    .badge-suspended { background: #fee2e2; color: #991b1b; }
-
-    .bar-wrap { display: flex; align-items: center; gap: 8px; }
-    .bar { flex: 1; height: 6px; background: #e5e5e5; border-radius: 3px; min-width: 80px; }
-    .bar-fill { height: 100%; border-radius: 3px; background: #4f46e5; transition: width .3s; }
-    .bar-fill.warn { background: #f59e0b; }
-    .bar-fill.danger { background: #ef4444; }
-    .bar-pct { font-size: .8rem; color: #666; min-width: 36px; text-align: right; }
-
-    .quota-edit { display: flex; align-items: center; gap: 6px; }
-    .quota-edit input {
-      width: 80px; padding: 4px 8px; border: 1px solid #ddd;
-      border-radius: 5px; font-size: .85rem;
-    }
-    .save-btn {
-      padding: 4px 10px; background: #4f46e5; color: #fff;
-      border: none; border-radius: 5px; font-size: .8rem; cursor: pointer;
-    }
-    .save-btn:hover { background: #4338ca; }
-    .save-btn.saved { background: #16a34a; }
-
-    .loading { text-align: center; padding: 40px; color: #999; }
-  </style>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
-<!-- Login -->
+<!-- ── Login ───────────────────────────────────────────────────────────────── -->
 <div id="login-screen">
   <div class="login-card">
     <h1>Vendor Console</h1>
@@ -105,86 +16,138 @@
     <input type="email" id="email" placeholder="admin@answerer.internal" autocomplete="username">
     <label for="password">Password</label>
     <input type="password" id="password" autocomplete="current-password">
-    <button class="btn" id="login-btn" onclick="login()">Sign in</button>
-    <div class="error-msg" id="login-error"></div>
+    <button class="btn btn-primary btn-full" id="login-btn">Sign in</button>
+    <div class="login-error" id="login-error"></div>
   </div>
 </div>
 
-<!-- Dashboard -->
-<div id="dashboard">
-  <header>
-    <h1>Vendor Console</h1>
-    <div style="display:flex;align-items:center;gap:16px">
-      <span id="logged-in-as"></span>
-      <button class="logout-btn" onclick="logout()">Sign out</button>
+<!-- ── App shell ───────────────────────────────────────────────────────────── -->
+<div id="app-shell" hidden>
+
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Vendor Console</span>
     </div>
-  </header>
-  <main>
-    <div class="section-header">
-      <h2>Tenants</h2>
-      <button class="refresh-btn" onclick="loadTenants()">&#8635; Refresh</button>
+
+    <nav id="sidebar-nav">
+      <div class="nav-section">Management</div>
+      <button class="nav-item active" data-tab="tenants">Tenants</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span class="sidebar-user" id="logged-in-as"></span>
+      <button class="btn btn-secondary btn-full btn-sm" id="logout-btn">Sign out</button>
     </div>
-    <div id="table-wrap"><div class="loading">Loading…</div></div>
+  </aside>
+
+  <main id="main-content">
+
+    <!-- TENANTS ──────────────────────────────────────────────────────────── -->
+    <div id="tab-tenants" class="tab-panel active">
+      <div class="page-header">
+        <div>
+          <h1>Tenants</h1>
+          <p>Click any row to expand activity detail.</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="refresh-btn">↻ Refresh</button>
+      </div>
+
+      <div id="stat-cards" style="display:none">
+        <div class="stat-cards">
+          <div class="stat-card">
+            <div class="stat-label">Total tenants</div>
+            <div class="stat-value" id="stat-total">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Active</div>
+            <div class="stat-value" id="stat-active">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Suspended</div>
+            <div class="stat-value" id="stat-suspended">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg quota used</div>
+            <div class="stat-value" id="stat-avg-quota">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="table-wrap" class="card card-flush">
+        <div class="loading">Loading…</div>
+      </div>
+    </div>
+
   </main>
 </div>
 
 <script>
-const BASE = '';  // same origin when served from FastAPI
+const BASE = '';
+const ADMIN_CONSOLE_URL = 'https://admin-console-848760828618.us-central1.run.app';
 
 let accessToken = null;
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—'; }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 async function login() {
-  const email = document.getElementById('email').value.trim();
+  const email    = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
-  const btn = document.getElementById('login-btn');
-  const errEl = document.getElementById('login-error');
-  errEl.textContent = '';
-  btn.disabled = true;
-  btn.textContent = 'Signing in…';
+  const btn      = document.getElementById('login-btn');
+  document.getElementById('login-error').textContent = '';
+  btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const res = await fetch(`${BASE}/v1/auth/login`, {
+    const res  = await fetch(`${BASE}/v1/auth/login`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({email, password}),
     });
     const data = await res.json();
-    if (!res.ok) { errEl.textContent = data.detail || 'Login failed'; return; }
+    if (!res.ok) {
+      document.getElementById('login-error').textContent = data.message || data.detail || 'Login failed';
+      return;
+    }
     accessToken = data.access_token;
     document.getElementById('logged-in-as').textContent = email;
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('dashboard').style.display = 'block';
+    document.getElementById('login-screen').style.display  = 'none';
+    document.getElementById('app-shell').removeAttribute('hidden');
     loadTenants();
-  } catch (e) {
-    errEl.textContent = 'Network error';
+  } catch(e) {
+    document.getElementById('login-error').textContent = 'Network error';
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Sign in';
+    btn.disabled = false; btn.textContent = 'Sign in';
   }
 }
 
 async function logout() {
   try {
     await fetch(`${BASE}/v1/auth/logout`, {
-      method: 'POST',
-      headers: {'Authorization': `Bearer ${accessToken}`},
+      method: 'POST', headers: {'Authorization': `Bearer ${accessToken}`}
     });
-  } catch (_) {}
+  } catch(_) {}
   accessToken = null;
-  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('app-shell').setAttribute('hidden', '');
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('password').value = '';
 }
 
-document.getElementById('password').addEventListener('keydown', e => {
-  if (e.key === 'Enter') login();
-});
+document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+document.getElementById('login-btn').addEventListener('click', login);
+document.getElementById('logout-btn').addEventListener('click', logout);
+document.getElementById('refresh-btn').addEventListener('click', loadTenants);
 
 // ── Tenants ───────────────────────────────────────────────────────────────────
 
 async function loadTenants() {
-  document.getElementById('table-wrap').innerHTML = '<div class="loading">Loading…</div>';
+  const wrap = document.getElementById('table-wrap');
+  wrap.innerHTML = '<div class="loading">Loading…</div>';
   try {
     const res = await fetch(`${BASE}/v1/tenants?limit=200`, {
       headers: {'Authorization': `Bearer ${accessToken}`},
@@ -192,79 +155,154 @@ async function loadTenants() {
     if (res.status === 401) { logout(); return; }
     const data = await res.json();
     renderTable(data.items || []);
-  } catch (e) {
-    document.getElementById('table-wrap').innerHTML = '<div class="loading">Failed to load tenants.</div>';
+  } catch(e) {
+    wrap.innerHTML = '<div class="msg-err loading">Failed to load tenants.</div>';
   }
 }
 
+function renderStats(tenants) {
+  const total     = tenants.length;
+  const suspended = tenants.filter(t => t.suspended).length;
+  const active    = total - suspended;
+  const avgPct    = total
+    ? (tenants.reduce((s, t) => s + (t.quota_utilisation_pct || 0), 0) / total).toFixed(1)
+    : 0;
+  document.getElementById('stat-total').textContent     = total;
+  document.getElementById('stat-active').textContent    = active;
+  const suspEl = document.getElementById('stat-suspended');
+  suspEl.textContent = suspended;
+  suspEl.className   = 'stat-value' + (suspended > 0 ? ' danger' : '');
+  const avgEl  = document.getElementById('stat-avg-quota');
+  avgEl.textContent  = avgPct + '%';
+  avgEl.className    = 'stat-value' + (avgPct >= 90 ? ' danger' : avgPct >= 70 ? ' warn' : '');
+  document.getElementById('stat-cards').style.display = 'block';
+}
+
 function renderTable(tenants) {
-  if (tenants.length === 0) {
-    document.getElementById('table-wrap').innerHTML = '<div class="loading">No tenants yet.</div>';
-    return;
+  const wrap = document.getElementById('table-wrap');
+  if (!tenants.length) {
+    wrap.innerHTML = '<div class="empty-state">No tenants yet.</div>'; return;
   }
+  renderStats(tenants);
 
   const rows = tenants.map(t => {
-    const pct = Math.min(t.quota_utilisation_pct || 0, 100).toFixed(1);
-    const barClass = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : '';
-    const badge = t.suspended
-      ? '<span class="badge badge-suspended">Suspended</span>'
-      : '<span class="badge badge-ok">Active</span>';
+    const pct    = Math.min(t.quota_utilisation_pct || 0, 100).toFixed(1);
+    const barCls = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : '';
+    const badge  = t.suspended
+      ? '<span class="badge badge-red">Suspended</span>'
+      : '<span class="badge badge-green">Active</span>';
     const src = t.source_breakdown_7d || {};
-    const lastQ = t.last_question_at ? new Date(t.last_question_at).toLocaleString() : '—';
+
     return `
-      <tr>
-        <td><strong>${esc(t.name)}</strong><br><small style="color:#999">${t.tenant_id}</small></td>
+      <tr class="summary-row" data-id="${t.tenant_id}">
+        <td><button class="expand-btn" data-id="${t.tenant_id}" title="Expand">▶</button></td>
+        <td>
+          <strong>${esc(t.name)}</strong>
+          <div class="mono muted small">${esc(t.tenant_id)}</div>
+        </td>
         <td>${badge}</td>
-        <td>${esc(t.plan)}</td>
+        <td>${esc(t.plan || '—')}</td>
         <td>
           <div class="bar-wrap">
-            <div class="bar"><div class="bar-fill ${barClass}" style="width:${pct}%"></div></div>
+            <div class="bar"><div class="bar-fill ${barCls}" style="width:${pct}%"></div></div>
             <span class="bar-pct">${pct}%</span>
           </div>
         </td>
         <td>
           <div class="quota-edit">
-            <input type="number" id="quota-${t.tenant_id}" value="${t.questions_quota}" min="0">
-            <button class="save-btn" id="save-${t.tenant_id}" onclick="saveQuota('${t.tenant_id}')">Save</button>
+            <input type="number" id="quota-${t.tenant_id}" value="${t.questions_quota}" min="0" onclick="event.stopPropagation()">
+            <button class="btn btn-primary btn-sm" data-id="${t.tenant_id}" data-action="save-quota" onclick="event.stopPropagation()">Save</button>
           </div>
         </td>
-        <td>${t.questions_7d} / ${t.questions_30d}</td>
-        <td>${t.error_rate_7d_pct != null ? t.error_rate_7d_pct.toFixed(1) + '%' : '—'}</td>
-        <td>${t.avg_response_ms_7d != null ? t.avg_response_ms_7d + 'ms' : '—'}</td>
-        <td style="font-size:.8rem;white-space:nowrap">
-          RAG ${src.rag||0} · Curated ${src.curated||0} · Guard ${src.guardrail||0} · Err ${src.error||0}
+        <td class="nowrap">${t.questions_7d} / ${t.questions_30d}</td>
+        <td onclick="event.stopPropagation()">
+          <a class="btn btn-secondary btn-sm" href="${ADMIN_CONSOLE_URL}" target="_blank" rel="noopener">Open ↗</a>
         </td>
-        <td style="font-size:.8rem;color:#666;white-space:nowrap">${lastQ}</td>
+      </tr>
+      <tr class="detail-row hidden" id="detail-${t.tenant_id}">
+        <td colspan="8">
+          <div class="detail-panel">
+            <div class="detail-cell">
+              <div class="detail-cell-label">Sources — 7 days</div>
+              <div class="detail-cell-value">
+                <div class="src-grid">
+                  <div class="src-item"><span class="src-label">RAG</span><span class="src-count">${src.rag||0}</span></div>
+                  <div class="src-item"><span class="src-label">Curated</span><span class="src-count">${src.curated||0}</span></div>
+                  <div class="src-item"><span class="src-label">Guardrail</span><span class="src-count">${src.guardrail||0}</span></div>
+                  <div class="src-item"><span class="src-label">Error</span><span class="src-count">${src.error||0}</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="detail-cell">
+              <div class="detail-cell-label">Error rate — 7 days</div>
+              <div class="detail-cell-value">${t.error_rate_7d_pct != null ? t.error_rate_7d_pct.toFixed(1) + '%' : '—'}</div>
+            </div>
+            <div class="detail-cell">
+              <div class="detail-cell-label">Avg response — 7 days</div>
+              <div class="detail-cell-value">${t.avg_response_ms_7d != null ? t.avg_response_ms_7d + ' ms' : '—'}</div>
+            </div>
+            <div class="detail-cell">
+              <div class="detail-cell-label">Last question</div>
+              <div class="detail-cell-value small">${fmtDate(t.last_question_at)}</div>
+              <div class="detail-cell-label">Last indexed</div>
+              <div class="detail-cell-value small">${fmtDate(t.last_indexed_at)}</div>
+            </div>
+          </div>
+        </td>
       </tr>`;
   }).join('');
 
-  document.getElementById('table-wrap').innerHTML = `
+  wrap.innerHTML = `
+    <div class="table-scroll">
     <table>
       <thead>
         <tr>
+          <th></th>
           <th>Tenant</th>
           <th>Status</th>
           <th>Plan</th>
           <th>Quota used</th>
           <th>Quota limit</th>
           <th>Q 7d / 30d</th>
-          <th>Error rate 7d</th>
-          <th>Avg resp</th>
-          <th>Source 7d</th>
-          <th>Last question</th>
+          <th>Admin Console</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>
+    </div>`;
 }
 
-async function saveQuota(tenantId) {
+// ── Row expand / collapse ─────────────────────────────────────────────────────
+
+document.getElementById('table-wrap').addEventListener('click', async e => {
+  // Save quota
+  const saveBtn = e.target.closest('[data-action="save-quota"]');
+  if (saveBtn) {
+    await saveQuota(saveBtn.dataset.id, saveBtn);
+    return;
+  }
+
+  // Expand row — click anywhere on summary row
+  const row = e.target.closest('.summary-row');
+  if (!row) return;
+  const id        = row.dataset.id;
+  const detailRow = document.getElementById(`detail-${id}`);
+  const btn       = row.querySelector('.expand-btn');
+  if (!detailRow) return;
+
+  const isOpen = !detailRow.classList.contains('hidden');
+  detailRow.classList.toggle('hidden', isOpen);
+  btn.textContent = isOpen ? '▶' : '▼';
+});
+
+// ── Save quota ────────────────────────────────────────────────────────────────
+
+async function saveQuota(tenantId, btn) {
   const input = document.getElementById(`quota-${tenantId}`);
-  const btn = document.getElementById(`save-${tenantId}`);
   const quota = parseInt(input.value, 10);
   if (isNaN(quota) || quota < 0) return;
-  btn.disabled = true;
-  btn.textContent = '…';
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
   try {
     const res = await fetch(`${BASE}/v1/tenants/${tenantId}/quota`, {
       method: 'PUT',
@@ -272,21 +310,12 @@ async function saveQuota(tenantId) {
       body: JSON.stringify({questions_quota: quota}),
     });
     if (res.ok) {
-      btn.textContent = '✓';
-      btn.classList.add('saved');
-      setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('saved'); btn.disabled = false; }, 1500);
+      btn.textContent = 'Saved';
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
     } else {
-      btn.textContent = 'Error';
-      btn.disabled = false;
+      btn.textContent = 'Error'; btn.disabled = false;
     }
-  } catch (_) {
-    btn.textContent = 'Error';
-    btn.disabled = false;
-  }
-}
-
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  } catch(_) { btn.textContent = 'Error'; btn.disabled = false; }
 }
 </script>
 </body>
