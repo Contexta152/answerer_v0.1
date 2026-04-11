@@ -43,8 +43,23 @@ https://github.com/Contexta152/answerer_v0.1
 
 ## Qdrant
 
-Runs embedded within the answerer container — no separate service.
-One collection per tenant: `tenant_{uuid}`.
+Runs on a dedicated GCE VM with a persistent SSD. One collection per tenant: `tenant_{uuid}`.
+
+| Key | Value |
+|---|---|
+| VM name | `qdrant-server` |
+| Zone | `us-central1-a` |
+| Machine type | `e2-small` |
+| Internal IP | `10.128.0.3` |
+| Port | `6333` |
+| Data disk | `qdrant-data` — 50 GB pd-balanced, auto-delete=no, mounted at `/var/lib/qdrant` |
+| Runtime | Docker (`qdrant/qdrant:v1.13.4`), `--restart=always` |
+| Outbound internet | Cloud NAT router `nat-router` (VM has no external IP) |
+| Firewall | `allow-qdrant-internal` — tcp:6333, source `10.128.0.0/20` → tag `qdrant-server` |
+
+Cloud Run reaches the VM via Direct VPC Egress (`--network=default --subnet=default --vpc-egress=private-ranges-only`). The `QDRANT_URL` env var points Cloud Run at the VM.
+
+Vectors persist across answerer redeploys. Re-indexing is only needed after a disk wipe.
 
 ---
 
@@ -55,6 +70,8 @@ One collection per tenant: `tenant_{uuid}`.
 | Service name | `answerer` |
 | Region | `us-central1` |
 | Cloud SQL connection | via Cloud SQL connector (Unix socket) |
+| VPC egress | Direct VPC Egress — `network=default`, `subnet=default`, `private-ranges-only` |
+| Max instances | 5 |
 
 ---
 
@@ -75,9 +92,9 @@ The ask flow is almost entirely I/O-bound: embed (Vertex AI), vector search (Qdr
 
 Queries are stateless — no in-process session state, no per-tenant affinity required. Two requests for the same tenant can and will be served by different containers. Both read from shared Postgres and the same Qdrant data, so results are consistent regardless of which instance handles the request.
 
-### Qdrant constraint
+### Qdrant
 
-Qdrant currently runs **embedded** (local file path inside the container). This works for a single instance but breaks horizontal scaling — each container would have its own isolated vector store, so queries on different instances would return different results. Before scaling beyond one instance, Qdrant must be replaced with a shared Qdrant server (self-hosted on GCP, not Qdrant Cloud) and the client switched to HTTP mode.
+Qdrant runs on a dedicated GCE VM (`qdrant-server`, `10.128.0.3:6333`), shared across all Cloud Run instances. Cloud Run reaches it via Direct VPC Egress. Vectors are stored on a separate persistent disk that survives VM restarts and answerer redeploys, so horizontal scaling works correctly — all instances read from the same vector store.
 
 ---
 
@@ -101,7 +118,9 @@ Qdrant currently runs **embedded** (local file path inside the container). This 
 | `JWT_SECRET` | Secret Manager (`jwt-secret`) | Validates admin JWT tokens |
 | `GOOGLE_CLOUD_PROJECT` | Cloud Run env | GCP project ID |
 | `GOOGLE_CLOUD_LOCATION` | Cloud Run env | Vertex AI region (default: `us-central1`) |
-| `VERTEX_LLM_MODEL` | Cloud Run env | Gemini model name (default: `gemini-1.5-flash`) |
+| `VERTEX_LLM_MODEL` | Cloud Run env | Gemini model name (default: `gemini-2.0-flash`) |
+| `QDRANT_URL` | Cloud Run env | Qdrant server URL (`http://10.128.0.3:6333`) |
+| `ADMIN_JWT_SECRET` | Secret Manager (`admin-console-jwt-secret`) | Validates Admin Console JWT tokens |
 
 ---
 

@@ -270,27 +270,29 @@ Admin Console stores quota locally
 
 ```
 ┌─────────────────────────────────────────────┐
-│              answerer container              │
+│         answerer container (Cloud Run)       │
 │                                             │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐   │
 │  │ tenant A │ │ tenant B │ │ tenant C │   │
 │  └──────────┘ └──────────┘ └──────────┘   │
 │                                             │
 │  FastAPI (uvicorn, async)                   │
-│  Qdrant (embedded, per-tenant collections)  │
 │                                             │
 └──────────────────┬──────────────────────────┘
-                   │
-          ┌────────▼────────┐
-          │  Cloud SQL       │
-          │  (shared Postgres│
-          │   tenant tables) │
-          └─────────────────┘
+         VPC egress│ (Direct VPC Egress,
+                   │  private-ranges-only)
+          ┌────────▼────────┐    ┌─────────────────────────┐
+          │  Cloud SQL       │    │  qdrant-server (GCE VM) │
+          │  (shared Postgres│    │  e2-small, us-central1-a │
+          │   tenant tables) │    │  10.128.0.3:6333         │
+          └─────────────────┘    │  50 GB persistent SSD    │
+                                  │  qdrant/qdrant:v1.13.4   │
+                                  └─────────────────────────┘
 ```
 
 Target: 10 tenants per container instance.
 Cloud Run handles scaling — new container instances spun up under load.
-Qdrant runs embedded within the container (not a separate service).
+All instances share the same Qdrant VM, so vector searches are consistent across instances.
 
 ---
 
@@ -367,8 +369,10 @@ When behaviour is ambiguous, the spec wins — not the code.
 | Database | `answerer`, user `answerer`, password in Secret Manager (`answerer-db-password`) |
 | Cloud SQL connection name | `project-3a1ab238-6b95-4034-8c6:us-central1:answerer-db` |
 | Vertex AI | `text-embedding-004` (embeddings), `gemini-1.5-flash` (LLM) |
-| Qdrant | Embedded in container — no separate service |
-| Cloud Run service | `answerer`, `us-central1`, connects to Cloud SQL via Unix socket |
+| Qdrant | GCE VM `qdrant-server`, `us-central1-a`, `10.128.0.3:6333`, 50 GB persistent SSD |
+| Cloud NAT | `nat-router` — outbound internet for VMs without external IPs |
+| Firewall | `allow-qdrant-internal` — tcp:6333 from `10.128.0.0/20` to tag `qdrant-server` |
+| Cloud Run service | `answerer`, `us-central1`, Cloud SQL via Unix socket, Qdrant via Direct VPC Egress |
 
 ---
 
@@ -378,7 +382,7 @@ When behaviour is ambiguous, the spec wins — not the code.
 |---|---|---|
 | Payment provider | LemonSqueezy (likely) | Simpler than Stripe for SaaS licensing, decision not final |
 | Payment Service | Stub only for now | Build stub, real service later |
-| Vector store | Qdrant (embedded) | Runs in-process, no separate service |
+| Vector store | Qdrant on GCE VM | Persistent SSD survives redeploys; shared across Cloud Run instances for consistent results |
 | Tenant isolation in Qdrant | One collection per tenant | Structural isolation, no filter bugs |
 | Database | Google Cloud SQL (Postgres) | Managed, reliable, familiar |
 | LLM + embeddings | Vertex AI | GCP-native, cost attribution via labels |
