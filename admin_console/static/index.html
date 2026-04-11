@@ -48,6 +48,9 @@
       <button class="nav-item" data-tab="guardrails"><span class="nav-icon">🛡</span> Guardrails</button>
       <button class="nav-item" data-tab="curated"><span class="nav-icon">✦</span> Curated Answers</button>
 
+      <div class="nav-group-label">Testing</div>
+      <button class="nav-item" data-tab="testquery"><span class="nav-icon">⊕</span> Test Query</button>
+
       <div class="nav-group-label">Monitoring</div>
       <button class="nav-item" data-tab="qlog"><span class="nav-icon">◈</span> Question Log</button>
       <button class="nav-item" data-tab="analytics"><span class="nav-icon">▲</span> Analytics</button>
@@ -324,6 +327,53 @@
       </div>
     </div>
 
+    <!-- TEST QUERY ───────────────────────────────────────────────────────── -->
+    <div id="tab-testquery" class="tab-panel">
+      <div class="page-header">
+        <h1>Test Query</h1>
+        <p>Submit a question to inspect retrieved snippets and optionally generate an answer.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Question</div>
+        <div class="form-group">
+          <textarea id="tq-question" rows="3" placeholder="Type a question to test against your knowledge base…"></textarea>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="tq-search-btn">Find Snippets</button>
+        </div>
+        <div id="tq-search-msg" style="margin-top:8px;font-size:0.85rem"></div>
+      </div>
+
+      <div id="tq-results-section" style="display:none">
+        <div class="card">
+          <div class="card-title">Snippet Threshold</div>
+          <div class="slider-field">
+            <label for="tq-threshold">Score threshold — snippets below this are dimmed</label>
+            <div class="range-row">
+              <input type="range" id="tq-threshold" min="0" max="1" step="0.01" value="0.5">
+              <input type="number" class="range-num" id="tq-threshold-num" min="0" max="1" step="0.01" value="0.5">
+            </div>
+          </div>
+          <div id="tq-threshold-summary" style="font-size:0.83rem;color:var(--text-muted);margin-top:6px"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" id="tq-snippets-title">Snippets</div>
+          <div id="tq-snippets-list"></div>
+          <div class="btn-row" style="margin-top:16px">
+            <button class="btn btn-secondary" id="tq-llm-btn">Submit to LLM for full answer</button>
+            <span id="tq-llm-msg" style="margin-left:10px;font-size:0.85rem"></span>
+          </div>
+        </div>
+
+        <div class="card" id="tq-answer-card" style="display:none">
+          <div class="card-title">Answer <span id="tq-answer-source" class="badge" style="margin-left:8px"></span></div>
+          <div id="tq-answer-text" style="white-space:pre-wrap;line-height:1.6;font-size:0.9rem"></div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /main-content -->
 </div><!-- /app-shell -->
 
@@ -333,10 +383,12 @@ const BASE = '';
 
 let accessToken = null;
 let tenantId    = null;
+let widgetKey   = null;
 let qlogOffset  = 0;
 let qlogTotal   = 0;
 let qlogItems   = [];
 let activeQlogRow = null;
+let tqChunks    = [];
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -504,6 +556,7 @@ async function loadWidgetKey() {
     const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/widget-key`);
     const d   = await res.json();
     if (!res.ok) { el.style.filter = ''; el.textContent = `Error: ${d.detail || JSON.stringify(d)}`; return; }
+    widgetKey = d.widget_api_key;
     el.textContent = d.widget_api_key;
     el.style.filter = 'blur(4px)';
     el.onclick = () => { el.style.filter = el.style.filter ? '' : 'blur(4px)'; };
@@ -1294,6 +1347,93 @@ document.getElementById('job-stop-btn').addEventListener('click', async () => {
       ? '<div class="msg-ok">Job stopped.</div>'
       : `<div class="msg-err">Stop failed (${res.status}).</div>`;
   } catch(e) { el.innerHTML = '<div class="msg-err">Network error.</div>'; }
+});
+
+// ── Test Query ────────────────────────────────────────────────────────────────
+
+function tqRenderSnippets() {
+  const threshold = parseFloat(document.getElementById('tq-threshold').value) || 0;
+  const list = document.getElementById('tq-snippets-list');
+  const title = document.getElementById('tq-snippets-title');
+  const summary = document.getElementById('tq-threshold-summary');
+
+  const above = tqChunks.filter(c => c.score >= threshold).length;
+  title.textContent = `Snippets (${tqChunks.length} found)`;
+  summary.textContent = `${above} of ${tqChunks.length} snippet${tqChunks.length !== 1 ? 's' : ''} meet threshold`;
+
+  list.innerHTML = tqChunks.map((c, i) => {
+    const meets = c.score >= threshold;
+    const scoreClass = c.score >= 0.8 ? 'badge-green' : c.score >= 0.5 ? 'badge-blue' : 'badge-gray';
+    return `<div class="chunk-mini" style="${meets ? '' : 'opacity:0.35;'}">
+      <div class="chunk-mini-head">
+        <span class="mono" style="font-size:0.78rem">${esc(c.source)}</span>
+        <span class="badge ${scoreClass}">score ${c.score.toFixed(3)}</span>
+        <span class="muted" style="font-size:0.75rem">${c.tokens} tokens</span>
+      </div>
+      <div class="chunk-mini-body">${esc(c.text)}</div>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('tq-search-btn').addEventListener('click', async () => {
+  const question = document.getElementById('tq-question').value.trim();
+  const msgEl = document.getElementById('tq-search-msg');
+  const btn = document.getElementById('tq-search-btn');
+  if (!question) { msgEl.className = 'msg-err'; msgEl.textContent = 'Enter a question.'; return; }
+  msgEl.className = ''; msgEl.textContent = '';
+  btn.disabled = true; btn.textContent = 'Searching…';
+  document.getElementById('tq-results-section').style.display = 'none';
+  document.getElementById('tq-answer-card').style.display = 'none';
+  tqChunks = [];
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/search`, {
+      method: 'POST', body: JSON.stringify({question, top_k: 20})
+    });
+    const d = await res.json();
+    if (!res.ok) { msgEl.className = 'msg-err'; msgEl.textContent = `Error: ${d.message||d.detail||JSON.stringify(d)}`; return; }
+    tqChunks = d.chunks || [];
+    if (!tqChunks.length) {
+      msgEl.className = 'msg-err'; msgEl.textContent = 'No snippets found for this question.'; return;
+    }
+    document.getElementById('tq-results-section').style.display = '';
+    document.getElementById('tq-llm-msg').textContent = '';
+    tqRenderSnippets();
+    msgEl.textContent = `${d.embed_tokens != null ? d.embed_tokens + ' embed tokens used' : ''}`;
+  } catch(e) { msgEl.className = 'msg-err'; msgEl.textContent = `Network error: ${e.message}`; }
+  finally { btn.disabled = false; btn.textContent = 'Find Snippets'; }
+});
+
+(function() {
+  const range = document.getElementById('tq-threshold');
+  const num   = document.getElementById('tq-threshold-num');
+  range.oninput = () => { num.value = range.value; if (tqChunks.length) tqRenderSnippets(); };
+  num.oninput   = () => { const v = parseFloat(num.value); if (!isNaN(v)) { range.value = v; if (tqChunks.length) tqRenderSnippets(); } };
+})();
+
+document.getElementById('tq-llm-btn').addEventListener('click', async () => {
+  const question = document.getElementById('tq-question').value.trim();
+  const msgEl = document.getElementById('tq-llm-msg');
+  const btn = document.getElementById('tq-llm-btn');
+  if (!question) return;
+  if (!widgetKey) { msgEl.className = 'msg-err'; msgEl.textContent = 'Widget key not loaded — visit Overview first.'; return; }
+  msgEl.className = ''; msgEl.textContent = '';
+  btn.disabled = true; btn.textContent = 'Generating…';
+  document.getElementById('tq-answer-card').style.display = 'none';
+  try {
+    const res = await fetch(`${ANSWERER_URL}/v1/tenants/${tenantId}/ask`, {
+      method: 'POST',
+      headers: {'X-Widget-Key': widgetKey, 'Content-Type': 'application/json'},
+      body: JSON.stringify({question}),
+    });
+    const d = await res.json();
+    if (!res.ok) { msgEl.className = 'msg-err'; msgEl.textContent = `Error: ${d.detail||d.message||JSON.stringify(d)}`; return; }
+    const srcCls = {rag:'badge-blue', curated:'badge-green', guardrail:'badge-yellow', error:'badge-red'};
+    document.getElementById('tq-answer-source').className = `badge ${srcCls[d.source]||'badge-gray'}`;
+    document.getElementById('tq-answer-source').textContent = d.source || '';
+    document.getElementById('tq-answer-text').textContent = d.answer || '';
+    document.getElementById('tq-answer-card').style.display = '';
+  } catch(e) { msgEl.className = 'msg-err'; msgEl.textContent = `Network error: ${e.message}`; }
+  finally { btn.disabled = false; btn.textContent = 'Submit to LLM for full answer'; }
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
