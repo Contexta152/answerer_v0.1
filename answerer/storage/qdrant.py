@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 import os
 from uuid import UUID
 
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
     FilterSelector,
     MatchValue,
+    PointIdsList,
     PointStruct,
     VectorParams,
 )
@@ -18,14 +18,14 @@ from qdrant_client.models import (
 _VECTOR_SIZE = 768  # text-embedding-004 default output dimension
 _DISTANCE = Distance.COSINE
 
-_client: QdrantClient | None = None
+_client: AsyncQdrantClient | None = None
 
 
-def _get_client() -> QdrantClient:
+async def _get_client() -> AsyncQdrantClient:
     global _client
     if _client is None:
-        path = os.environ.get("QDRANT_PATH", "./qdrant_data")
-        _client = QdrantClient(path=path)
+        url = os.environ["QDRANT_URL"]
+        _client = AsyncQdrantClient(url=url)
     return _client
 
 
@@ -33,12 +33,12 @@ def _collection_name(tenant_id: UUID) -> str:
     return f"tenant_{tenant_id}"
 
 
-def _ensure_collection(tenant_id: UUID) -> None:
-    client = _get_client()
+async def _ensure_collection(tenant_id: UUID) -> None:
+    client = await _get_client()
     name = _collection_name(tenant_id)
-    existing = {c.name for c in client.get_collections().collections}
+    existing = {c.name for c in (await client.get_collections()).collections}
     if name not in existing:
-        client.create_collection(
+        await client.create_collection(
             collection_name=name,
             vectors_config=VectorParams(size=_VECTOR_SIZE, distance=_DISTANCE),
         )
@@ -53,14 +53,13 @@ async def upsert_vectors(tenant_id: UUID, vectors: list[dict]) -> None:
         vector:  list[float]
         payload: dict — arbitrary metadata (source URL, text, etc.)
     """
-    client = _get_client()
-    await asyncio.to_thread(_ensure_collection, tenant_id)
+    client = await _get_client()
+    await _ensure_collection(tenant_id)
     points = [
         PointStruct(id=v["id"], vector=v["vector"], payload=v["payload"])
         for v in vectors
     ]
-    await asyncio.to_thread(
-        client.upsert,
+    await client.upsert(
         collection_name=_collection_name(tenant_id),
         points=points,
     )
@@ -68,11 +67,8 @@ async def upsert_vectors(tenant_id: UUID, vectors: list[dict]) -> None:
 
 async def delete_vectors(tenant_id: UUID, ids: list[str]) -> None:
     """Delete points by string UUID from the tenant's collection."""
-    from qdrant_client.models import PointIdsList
-
-    client = _get_client()
-    await asyncio.to_thread(
-        client.delete,
+    client = await _get_client()
+    await client.delete(
         collection_name=_collection_name(tenant_id),
         points_selector=PointIdsList(points=ids),
     )
@@ -80,15 +76,14 @@ async def delete_vectors(tenant_id: UUID, ids: list[str]) -> None:
 
 async def delete_guardrail_vectors(tenant_id: UUID, guardrail_id: UUID) -> None:
     """Delete all seed vectors belonging to a guardrail from the tenant's collection."""
-    client = _get_client()
+    client = await _get_client()
     f = Filter(
         must=[
             FieldCondition(key="type", match=MatchValue(value="guardrail")),
             FieldCondition(key="guardrail_id", match=MatchValue(value=str(guardrail_id))),
         ]
     )
-    await asyncio.to_thread(
-        client.delete,
+    await client.delete(
         collection_name=_collection_name(tenant_id),
         points_selector=FilterSelector(filter=f),
     )
@@ -109,8 +104,8 @@ async def similarity_search(
     must_not_payload: optional list of {field: value} dicts — each dict is one must_not condition.
     Returns list of {"id": str, "score": float, "payload": dict}.
     """
-    client = _get_client()
-    await asyncio.to_thread(_ensure_collection, tenant_id)
+    client = await _get_client()
+    await _ensure_collection(tenant_id)
 
     must_conditions = (
         [FieldCondition(key=k, match=MatchValue(value=v)) for k, v in payload_filter.items()]
@@ -130,8 +125,7 @@ async def similarity_search(
             must_not=must_not_conditions or None,
         )
 
-    response = await asyncio.to_thread(
-        client.query_points,
+    response = await client.query_points(
         collection_name=_collection_name(tenant_id),
         query=query_vector,
         query_filter=qdrant_filter,
@@ -145,5 +139,7 @@ async def similarity_search(
     ]
 
 
-async def drop_collection(tenant_id: UUID):
-    raise NotImplementedError
+async def drop_collection(tenant_id: UUID) -> None:
+    """Delete the tenant's entire Qdrant collection."""
+    client = await _get_client()
+    await client.delete_collection(_collection_name(tenant_id))
