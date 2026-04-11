@@ -35,7 +35,13 @@
     </nav>
 
     <div class="sidebar-footer">
-      <span class="sidebar-user" id="logged-in-as"></span>
+      <div class="sidebar-user-card">
+        <div class="sidebar-avatar" id="user-avatar">—</div>
+        <div class="sidebar-user-info">
+          <div class="sidebar-user-name" id="user-name"></div>
+          <div class="sidebar-user-email" id="logged-in-as"></div>
+        </div>
+      </div>
       <button class="btn btn-secondary btn-full btn-sm" id="logout-btn">Sign out</button>
     </div>
   </aside>
@@ -115,7 +121,10 @@ async function login() {
       return;
     }
     accessToken = data.access_token;
+    const initials = email.split('@')[0].slice(0,2).toUpperCase();
     document.getElementById('logged-in-as').textContent = email;
+    document.getElementById('user-name').textContent    = email.split('@')[0];
+    document.getElementById('user-avatar').textContent  = initials;
     document.getElementById('login-screen').style.display  = 'none';
     document.getElementById('app-shell').removeAttribute('hidden');
     loadTenants();
@@ -198,6 +207,7 @@ function renderTable(tenants) {
         <td><button class="expand-btn" data-id="${t.tenant_id}" title="Expand">▶</button></td>
         <td>
           <strong>${esc(t.name)}</strong>
+          ${t.email ? `<div class="muted small">${esc(t.email)}</div>` : ''}
           <div class="mono muted small">${esc(t.tenant_id)}</div>
         </td>
         <td>${badge}</td>
@@ -215,8 +225,8 @@ function renderTable(tenants) {
           </div>
         </td>
         <td class="nowrap">${t.questions_7d} / ${t.questions_30d}</td>
-        <td onclick="event.stopPropagation()">
-          <a class="btn btn-secondary btn-sm" href="${ADMIN_CONSOLE_URL}" target="_blank" rel="noopener">Open ↗</a>
+        <td>
+          <button class="btn btn-secondary btn-sm" data-action="open-admin" data-id="${t.tenant_id}">Open ↗</button>
         </td>
       </tr>
       <tr class="detail-row hidden" id="detail-${t.tenant_id}">
@@ -275,6 +285,23 @@ function renderTable(tenants) {
 // ── Row expand / collapse ─────────────────────────────────────────────────────
 
 document.getElementById('table-wrap').addEventListener('click', async e => {
+  // Open admin console for tenant
+  const openBtn = e.target.closest('[data-action="open-admin"]');
+  if (openBtn) {
+    const tid = openBtn.dataset.id;
+    openBtn.disabled = true;
+    try {
+      const res = await fetch(`${BASE}/v1/internal/impersonate/${tid}`, {
+        method: 'POST', headers: {'Authorization': `Bearer ${accessToken}`}
+      });
+      const d = await res.json();
+      if (res.ok) window.open(`${ADMIN_CONSOLE_URL}?token=${d.access_token}`, '_blank');
+      else alert('Failed to open admin console: ' + (d.detail || 'unknown error'));
+    } catch(e) { alert('Network error'); }
+    finally { openBtn.disabled = false; }
+    return;
+  }
+
   // Save quota
   const saveBtn = e.target.closest('[data-action="save-quota"]');
   if (saveBtn) {

@@ -23,6 +23,7 @@ class SourceBreakdown(BaseModel):
 class TenantSummary(BaseModel):
     tenant_id: UUID
     name: str
+    email: Optional[str] = None
     plan: str
     questions_quota: int
     suspended: bool

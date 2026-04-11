@@ -99,6 +99,15 @@ async def create_tables() -> None:
                 timing_total_ms INTEGER
             )
         """)
+        await conn.execute(
+            "ALTER TABLE question_log ADD COLUMN IF NOT EXISTS timing_guardrail_check_ms INTEGER"
+        )
+        await conn.execute(
+            "ALTER TABLE question_log ADD COLUMN IF NOT EXISTS embed_tokens INTEGER"
+        )
+        await conn.execute(
+            "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS url TEXT"
+        )
 
 
 async def get_tenant(tenant_id: UUID) -> Optional[dict]:
@@ -108,6 +117,73 @@ async def get_tenant(tenant_id: UUID) -> Optional[dict]:
         tenant_id,
     )
     return dict(row) if row else None
+
+
+async def get_crawl_jobs(tenant_id: UUID) -> list[dict]:
+    pool = await _get_pool()
+    # Fetch crawl jobs
+    crawl_rows = await pool.fetch(
+        """
+        SELECT job_id, status, created, started, completed, error, progress, url
+        FROM jobs
+        WHERE tenant_id = $1 AND job_type = 'crawl'
+        ORDER BY created DESC
+        """,
+        tenant_id,
+    )
+    if not crawl_rows:
+        return []
+
+    # Fetch the latest completed index job for each crawl job (url stores crawl_job_id)
+    index_rows = await pool.fetch(
+        """
+        SELECT DISTINCT ON (url) url, progress
+        FROM jobs
+        WHERE tenant_id = $1
+          AND job_type = 'index'
+          AND url IS NOT NULL
+        ORDER BY url, created DESC
+        """,
+        tenant_id,
+    )
+    # Build lookup: crawl_job_id_str -> embed_tokens
+    embed_tokens_by_crawl: dict[str, int | None] = {}
+    for ir in index_rows:
+        p = ir["progress"]
+        if p is not None:
+            if isinstance(p, str):
+                p = json.loads(p)
+            embed_tokens_by_crawl[ir["url"]] = p.get("embed_tokens")
+
+    result = []
+    for row in crawl_rows:
+        d = dict(row)
+        crawl_id_str = str(d["job_id"])
+        d["embed_tokens"] = embed_tokens_by_crawl.get(crawl_id_str)
+        result.append(d)
+    return result
+
+
+async def count_active_crawl_jobs(tenant_id: UUID) -> int:
+    pool = await _get_pool()
+    row = await pool.fetchrow(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM jobs
+        WHERE tenant_id = $1 AND job_type = 'crawl' AND status != 'failed'
+        """,
+        tenant_id,
+    )
+    return int(row["cnt"])
+
+
+async def get_widget_key(tenant_id: UUID) -> Optional[str]:
+    pool = await _get_pool()
+    row = await pool.fetchrow(
+        "SELECT widget_api_key FROM tenants WHERE id = $1",
+        tenant_id,
+    )
+    return row["widget_api_key"] if row else None
 
 
 async def insert_tenant(tenant_id: UUID, name: str, widget_api_key: str) -> dict:
@@ -468,10 +544,12 @@ async def insert_question_log_entry(tenant_id: UUID, entry: Any) -> None:
             source, answer, answer_tokens, curated_match_type, matched_question,
             guardrail_name, chunks, prompt_tokens, error,
             timing_curated_check_ms, timing_embed_ms, timing_vector_search_ms,
-            timing_llm_ms, timing_total_ms
+            timing_llm_ms, timing_total_ms,
+            timing_guardrail_check_ms, embed_tokens
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19
+            $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19,
+            $20, $21
         )
         ON CONFLICT (request_id) DO NOTHING
         """,
@@ -494,6 +572,8 @@ async def insert_question_log_entry(tenant_id: UUID, entry: Any) -> None:
         timing.vector_search_ms if timing else None,
         timing.llm_ms if timing else None,
         timing.total_ms if timing else None,
+        timing.guardrail_check_ms if timing else None,
+        entry.embed_tokens,
     )
 
 
@@ -562,9 +642,10 @@ async def query_question_log(
         SELECT
             request_id, timestamp, question, word_count, source, answer,
             answer_tokens, curated_match_type, matched_question, guardrail_name,
-            chunks, prompt_tokens, error,
+            chunks, prompt_tokens, embed_tokens, error,
             timing_curated_check_ms, timing_embed_ms,
-            timing_vector_search_ms, timing_llm_ms, timing_total_ms
+            timing_vector_search_ms, timing_llm_ms, timing_total_ms,
+            timing_guardrail_check_ms
         FROM question_log
         WHERE {where}
         ORDER BY timestamp DESC
@@ -579,19 +660,19 @@ async def query_question_log(
     for row in rows:
         r = dict(row)
         # Assemble timing sub-object only when at least one value is present
-        has_timing = any(
-            r.get(col) is not None
-            for col in (
-                "timing_curated_check_ms",
-                "timing_embed_ms",
-                "timing_vector_search_ms",
-                "timing_llm_ms",
-                "timing_total_ms",
-            )
+        timing_cols = (
+            "timing_curated_check_ms",
+            "timing_embed_ms",
+            "timing_vector_search_ms",
+            "timing_llm_ms",
+            "timing_total_ms",
+            "timing_guardrail_check_ms",
         )
+        has_timing = any(r.get(col) is not None for col in timing_cols)
         r["timing"] = (
             {
                 "curated_check_ms": r.pop("timing_curated_check_ms"),
+                "guardrail_check_ms": r.pop("timing_guardrail_check_ms"),
                 "embed_ms": r.pop("timing_embed_ms"),
                 "vector_search_ms": r.pop("timing_vector_search_ms"),
                 "llm_ms": r.pop("timing_llm_ms"),
@@ -601,13 +682,7 @@ async def query_question_log(
             else None
         )
         if not has_timing:
-            for col in (
-                "timing_curated_check_ms",
-                "timing_embed_ms",
-                "timing_vector_search_ms",
-                "timing_llm_ms",
-                "timing_total_ms",
-            ):
+            for col in timing_cols:
                 r.pop(col, None)
         r["chunks"] = r["chunks"] or []
         items.append(r)

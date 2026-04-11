@@ -68,6 +68,7 @@ class Chunk(BaseModel):
 
 class Timing(BaseModel):
     curated_check_ms: Optional[int] = None
+    guardrail_check_ms: Optional[int] = None
     embed_ms: Optional[int] = None
     vector_search_ms: Optional[int] = None
     llm_ms: Optional[int] = None
@@ -87,6 +88,7 @@ class QuestionLogEntry(BaseModel):
     guardrail_name: Optional[str] = None
     chunks: list[Chunk] = []
     prompt_tokens: Optional[int] = None
+    embed_tokens: Optional[int] = None
     error: Optional[str] = None
     timing: Optional[Timing] = None
 
@@ -95,6 +97,11 @@ class JobProgress(BaseModel):
     pages_crawled: Optional[int] = None
     pages_indexed: Optional[int] = None
     pages_total: Optional[int] = None
+    chunks_created: Optional[int] = None
+    vectors_upserted: Optional[int] = None
+    embed_tokens: Optional[int] = None
+    embed_batches: Optional[int] = None
+    pages_failed: Optional[int] = None
 
 
 class Job(BaseModel):
@@ -105,6 +112,7 @@ class Job(BaseModel):
     completed: Optional[datetime] = None
     error: Optional[str] = None
     progress: Optional[JobProgress] = None
+    url: Optional[str] = None
 
 
 class SourceBreakdown(BaseModel):

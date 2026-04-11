@@ -36,7 +36,7 @@ async def embed_texts(texts: list[str], task_type: str = _TASK_TYPE_SYMMETRIC) -
     return [r.values for r in result]
 
 
-async def embed_text(text: str, tenant_id: UUID, task_type: str = _TASK_TYPE_SYMMETRIC) -> list[float]:
+async def embed_text(text: str, tenant_id: UUID, task_type: str = _TASK_TYPE_SYMMETRIC) -> tuple[list[float], int | None]:
     """
     Embed a single text string via Vertex AI text-embedding-004.
 
@@ -44,8 +44,16 @@ async def embed_text(text: str, tenant_id: UUID, task_type: str = _TASK_TYPE_SYM
     guardrail seeds where both query and document sides are questions.
     Pass task_type=RETRIEVAL_DOCUMENT for indexed content chunks.
     Pass task_type=RETRIEVAL_QUERY for ask-time query embedding.
+
+    Returns (vector, token_count). token_count may be None if unavailable.
     """
     model = _get_model()
     inputs = [TextEmbeddingInput(text, task_type)]
     result = await asyncio.to_thread(model.get_embeddings, inputs)
-    return result[0].values
+    embedding = result[0]
+    token_count: int | None = None
+    try:
+        token_count = embedding.statistics.token_count
+    except Exception:
+        pass
+    return embedding.values, token_count

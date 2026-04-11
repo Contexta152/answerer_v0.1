@@ -64,3 +64,14 @@ async def logout(email: str) -> None:
     user = await postgres.get_user_by_email(email)
     if user:
         await postgres.delete_refresh_tokens_for_user(user["id"])
+
+
+def issue_impersonation_token(tenant_id: str, email: str) -> str:
+    secret = os.environ["ADMIN_JWT_SECRET"]
+    payload = {
+        "sub": email,
+        "tenant_id": tenant_id,
+        "role": "admin",
+        "exp": datetime.now(timezone.utc) + timedelta(seconds=300),  # 5 min
+    }
+    return jwt.encode(payload, secret, algorithm=_ALGORITHM)

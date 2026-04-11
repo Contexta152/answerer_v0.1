@@ -57,6 +57,16 @@ async def get_user_by_id(user_id: UUID) -> Optional[dict]:
     return dict(row) if row else None
 
 
+async def create_user(email: str, password_hash: str, tenant_id: UUID) -> dict:
+    pool = await _get_pool()
+    from uuid import uuid4
+    row = await pool.fetchrow(
+        "INSERT INTO admin_users (id, email, password_hash, tenant_id) VALUES ($1, $2, $3, $4) RETURNING id, email, tenant_id, created",
+        uuid4(), email, password_hash, tenant_id,
+    )
+    return dict(row)
+
+
 async def insert_user(user_id: UUID, email: str, password_hash: str, tenant_id: UUID) -> dict:
     pool = await _get_pool()
     row = await pool.fetchrow(

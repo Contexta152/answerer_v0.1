@@ -1,3 +1,4 @@
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +14,7 @@ router = APIRouter()
 
 class _CreateTenantBody(BaseModel):
     name: str
+    id: Optional[UUID] = None
 
 
 def _not_found(code: str, message: str):
@@ -35,7 +37,7 @@ async def create_tenant(
     body: _CreateTenantBody,
     _: None = Depends(require_service_key),
 ):
-    return await tenant_svc.create_tenant(body.name)
+    return await tenant_svc.create_tenant(body.name, tenant_id=body.id)
 
 
 @router.get("/v1/tenants/{tenant_id}", response_model=Tenant)
@@ -88,6 +90,17 @@ async def reinstate_tenant(
     found = await tenant_svc.reinstate_tenant(tenant_id)
     if not found:
         _not_found("tenant_not_found", "Tenant not found")
+
+
+@router.get("/v1/tenants/{tenant_id}/widget-key")
+async def get_widget_key(
+    tenant_id: UUID,
+    caller: UUID = Depends(require_admin_jwt),
+):
+    key = await tenant_svc.get_widget_key(tenant_id)
+    if key is None:
+        _not_found("tenant_not_found", "Tenant not found")
+    return {"widget_api_key": key}
 
 
 @router.get("/v1/tenants/{tenant_id}/settings", response_model=Settings)

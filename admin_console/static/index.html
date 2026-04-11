@@ -4,257 +4,1301 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Console</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #222; }
-
-    /* Login */
-    #login-screen {
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh;
-    }
-    .login-card {
-      background: #fff; border-radius: 8px; padding: 40px;
-      width: 360px; box-shadow: 0 2px 12px rgba(0,0,0,.1);
-    }
-    .login-card h1 { font-size: 1.4rem; margin-bottom: 24px; }
-    .login-card label { display: block; font-size: .85rem; font-weight: 600; margin-bottom: 4px; }
-    .login-card input {
-      width: 100%; padding: 10px 12px; border: 1px solid #ddd;
-      border-radius: 6px; font-size: .95rem; margin-bottom: 16px;
-    }
-    .login-card input:focus { outline: 2px solid #0ea5e9; border-color: transparent; }
-    .btn {
-      display: inline-block; padding: 10px 20px; background: #0ea5e9;
-      color: #fff; border: none; border-radius: 6px; font-size: .95rem;
-      cursor: pointer; width: 100%;
-    }
-    .btn:hover { background: #0284c7; }
-    .btn:disabled { background: #7dd3fc; cursor: default; }
-    .error-msg { color: #dc2626; font-size: .85rem; margin-top: 12px; }
-
-    /* Dashboard */
-    #dashboard { display: none; }
-    header {
-      background: #fff; border-bottom: 1px solid #e5e5e5;
-      padding: 14px 32px; display: flex; align-items: center; justify-content: space-between;
-    }
-    header h1 { font-size: 1.1rem; font-weight: 700; }
-    .logout-btn {
-      background: none; border: 1px solid #ddd; border-radius: 6px;
-      padding: 6px 14px; font-size: .85rem; cursor: pointer;
-    }
-    .logout-btn:hover { background: #f5f5f5; }
-
-    main { padding: 32px; max-width: 800px; margin: 0 auto; }
-
-    .card {
-      background: #fff; border-radius: 8px; padding: 28px;
-      box-shadow: 0 1px 4px rgba(0,0,0,.07); margin-bottom: 24px;
-    }
-    .card h2 { font-size: 1rem; font-weight: 700; margin-bottom: 16px; }
-
-    .info-row { display: flex; gap: 8px; margin-bottom: 8px; font-size: .9rem; }
-    .info-label { font-weight: 600; min-width: 130px; color: #555; }
-    .info-value { color: #222; word-break: break-all; }
-
-    .action-btn {
-      padding: 8px 18px; background: #0ea5e9; color: #fff;
-      border: none; border-radius: 6px; font-size: .88rem; cursor: pointer;
-      margin-top: 12px;
-    }
-    .action-btn:hover { background: #0284c7; }
-    .action-btn:disabled { background: #7dd3fc; cursor: default; }
-
-    .usage-result {
-      margin-top: 16px; padding: 14px; background: #f0f9ff;
-      border-radius: 6px; font-size: .88rem; display: none;
-    }
-    .usage-result.error { background: #fef2f2; color: #991b1b; }
-
-    .loading { color: #999; font-size: .88rem; }
-  </style>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
-<!-- Login -->
+<!-- ── Login ───────────────────────────────────────────────────────────────── -->
 <div id="login-screen">
   <div class="login-card">
     <h1>Admin Console</h1>
-    <label for="email">Email</label>
-    <input type="email" id="email" placeholder="admin@example.com" autocomplete="username">
-    <label for="password">Password</label>
-    <input type="password" id="password" autocomplete="current-password">
-    <button class="btn" id="login-btn" onclick="login()">Sign in</button>
-    <div class="error-msg" id="login-error"></div>
+    <div>
+      <label for="email">Email</label>
+      <input type="email" id="email" placeholder="admin@example.com" autocomplete="username">
+    </div>
+    <div>
+      <label for="password">Password</label>
+      <input type="password" id="password" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-full" id="login-btn">Sign in</button>
+    <div class="login-error" id="login-error"></div>
   </div>
 </div>
 
-<!-- Dashboard -->
-<div id="dashboard">
-  <header>
-    <h1>Admin Console</h1>
-    <div style="display:flex;align-items:center;gap:16px">
-      <span id="logged-in-as" style="font-size:.85rem;color:#666"></span>
-      <button class="logout-btn" onclick="logout()">Sign out</button>
+<!-- ── Top bar ─────────────────────────────────────────────────────────────── -->
+<div class="topbar" id="topbar" style="display:none">
+  <div class="logo"></div>
+  <h1>Admin Console</h1>
+  <div class="topbar-right">
+    <span class="topbar-tenant" id="sidebar-tenant-id"></span>
+    <span class="topbar-user" id="logged-in-as"></span>
+  </div>
+</div>
+
+<!-- ── App shell ───────────────────────────────────────────────────────────── -->
+<div id="app-shell" hidden>
+
+  <div id="sidebar">
+    <nav id="sidebar-nav">
+      <div class="nav-group-label">Dashboard</div>
+      <button class="nav-item active" data-tab="overview"><span class="nav-icon">◎</span> Overview</button>
+      <button class="nav-item" data-tab="settings"><span class="nav-icon">⚙</span> Settings</button>
+
+      <div class="nav-group-label">Knowledge Base</div>
+      <button class="nav-item" data-tab="guardrails"><span class="nav-icon">🛡</span> Guardrails</button>
+      <button class="nav-item" data-tab="curated"><span class="nav-icon">✦</span> Curated Answers</button>
+
+      <div class="nav-group-label">Monitoring</div>
+      <button class="nav-item" data-tab="qlog"><span class="nav-icon">◈</span> Question Log</button>
+      <button class="nav-item" data-tab="analytics"><span class="nav-icon">▲</span> Analytics</button>
+      <button class="nav-item" data-tab="jobs"><span class="nav-icon">⚡</span> Jobs</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span class="sidebar-user" id="sidebar-user-label"></span>
+      <button class="btn btn-secondary btn-full btn-sm" id="logout-btn">Sign out</button>
     </div>
-  </header>
-  <main>
-    <!-- Tenant info -->
-    <div class="card">
-      <h2>Tenant</h2>
-      <div class="info-row">
-        <span class="info-label">Tenant ID</span>
-        <span class="info-value" id="tenant-id">—</span>
+  </div>
+
+  <div id="main-content">
+
+    <!-- OVERVIEW ─────────────────────────────────────────────────────────── -->
+    <div id="tab-overview" class="tab-panel active">
+      <div class="page-header">
+        <h1>Overview</h1>
+        <p>Tenant info, quota, and usage at a glance.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Tenant</div>
+        <div class="data-row">
+          <span class="data-label">Tenant ID</span>
+          <span class="data-value mono" id="tenant-id">—</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Widget Key</span>
+          <span class="data-value mono" id="widget-key-value" style="filter:blur(4px);cursor:pointer;user-select:none" title="Click to reveal">—</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Status</span>
+          <span class="data-value" id="tenant-status">—</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Quota</div>
+        <div id="quota-content" class="loading">Loading…</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Usage — rolling 30 days</div>
+        <div id="usage-content" class="loading">Loading…</div>
+        <div class="btn-row">
+          <button class="btn btn-danger btn-sm" id="suspend-btn" style="display:none">Suspend Tenant</button>
+          <button class="btn btn-success btn-sm" id="reinstate-btn" style="display:none">Reinstate Tenant</button>
+          <span id="suspend-msg"></span>
+        </div>
       </div>
     </div>
 
-    <!-- Quota -->
-    <div class="card">
-      <h2>Quota</h2>
-      <div id="quota-content" class="loading">Loading…</div>
+    <!-- SETTINGS ─────────────────────────────────────────────────────────── -->
+    <div id="tab-settings" class="tab-panel">
+      <div class="page-header">
+        <h1>Settings</h1>
+        <p>RAG pipeline parameters and knowledge bases for this tenant.</p>
+      </div>
+      <div class="settings-2col">
+        <div class="settings-left">
+          <div class="card">
+            <div class="card-title">Pipeline Parameters</div>
+            <div id="settings-content" class="loading">Loading…</div>
+          </div>
+        </div>
+        <div class="settings-right">
+          <div class="card">
+            <div class="card-title">Knowledge Bases</div>
+            <div id="kb-list-content" class="loading">Loading…</div>
+          </div>
+
+          <div class="card" id="kb-add-card">
+            <div class="card-title">Add Knowledge Base</div>
+            <div class="form-group">
+              <label for="kb-url">Start URL — only pages at or below this path will be crawled</label>
+              <input type="url" id="kb-url" placeholder="https://docs.example.com/guide/">
+            </div>
+            <div class="form-group">
+              <label for="kb-max-pages">Pages to crawl</label>
+              <select id="kb-max-pages">
+                <option value="10" selected>10</option>
+                <option value="100">100</option>
+                <option value="999999">ALL</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" id="kb-create-btn">Crawl &amp; Index</button>
+            <div id="kb-create-msg" style="margin-top:10px;font-size:0.85rem"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Usage check -->
-    <div class="card">
-      <h2>Usage (from Answerer Service)</h2>
-      <p style="font-size:.88rem;color:#555">Check live usage data directly from the Answerer Service using your JWT.</p>
-      <button class="action-btn" id="check-usage-btn" onclick="checkUsage()">Check Usage</button>
-      <div class="usage-result" id="usage-result"></div>
+    <!-- GUARDRAILS ───────────────────────────────────────────────────────── -->
+    <div id="tab-guardrails" class="tab-panel">
+      <div class="page-header">
+        <h1>Guardrails</h1>
+        <p>Block or redirect questions that match trigger phrases.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Active Guardrails</div>
+        <div id="guardrails-list" class="loading">Loading…</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Add Guardrail</div>
+
+        <div class="form-group">
+          <label for="gr-name">Name</label>
+          <input type="text" id="gr-name" placeholder="e.g. No medical advice">
+        </div>
+
+        <div class="form-group">
+          <label for="gr-seeds">Trigger seeds — one per line</label>
+          <textarea id="gr-seeds" placeholder="medical advice&#10;diagnose&#10;treatment plan"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="gr-response">Response returned when triggered</label>
+          <textarea id="gr-response" rows="2" placeholder="I can't answer medical questions."></textarea>
+        </div>
+
+        <div class="slider-field">
+          <label for="gr-threshold">Threshold</label>
+          <div class="range-row">
+            <input type="range" id="gr-threshold" min="0" max="1" step="0.01" value="0.85">
+            <input type="number" class="range-num" min="0" max="1" step="0.01" value="0.85">
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="gr-add-btn">Add Guardrail</button>
+        <div id="gr-add-msg" class="msg-ok" style="margin-top:10px"></div>
+      </div>
     </div>
-  </main>
-</div>
+
+    <!-- CURATED ANSWERS ──────────────────────────────────────────────────── -->
+    <div id="tab-curated" class="tab-panel">
+      <div class="page-header">
+        <h1>Curated Answers</h1>
+        <p>Exact-match question–answer pairs served before RAG.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Curated Answers</div>
+        <div id="curated-list" class="loading">Loading…</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Add Curated Answer</div>
+
+        <div class="form-group">
+          <label for="ca-question">Question</label>
+          <input type="text" id="ca-question" placeholder="What are your business hours?">
+        </div>
+
+        <div class="form-group">
+          <label for="ca-answer">Answer</label>
+          <textarea id="ca-answer" placeholder="We are open Monday–Friday, 9am–5pm."></textarea>
+        </div>
+
+        <button class="btn btn-primary" id="ca-add-btn">Add Answer</button>
+        <div id="ca-add-msg" class="msg-ok" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <!-- QUESTION LOG ─────────────────────────────────────────────────────── -->
+    <div id="tab-qlog" class="tab-panel">
+      <div class="page-header">
+        <h1>Question Log</h1>
+        <p>Browse and filter all questions asked via the widget.</p>
+      </div>
+
+      <div class="card">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="qlog-from">From</label>
+            <input type="datetime-local" id="qlog-from">
+          </div>
+          <div class="form-group">
+            <label for="qlog-to">To</label>
+            <input type="datetime-local" id="qlog-to">
+          </div>
+          <div class="form-group">
+            <label for="qlog-source">Source</label>
+            <select id="qlog-source">
+              <option value="">All</option>
+              <option value="rag">RAG</option>
+              <option value="curated">Curated</option>
+              <option value="guardrail">Guardrail</option>
+              <option value="error">Error</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="qlog-keyword">Keyword</label>
+            <input type="text" id="qlog-keyword" placeholder="Search in question text…">
+          </div>
+          <div class="form-group">
+            <label for="qlog-limit">Per page</label>
+            <input type="number" id="qlog-limit" value="50" min="1" max="500">
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="qlog-search-btn">Search</button>
+
+        <div id="qlog-content" style="margin-top:20px"></div>
+        <div id="qlog-detail-panel"></div>
+
+        <div class="pagination" id="qlog-pagination" style="display:none">
+          <button class="btn btn-secondary btn-sm" id="qlog-prev">← Prev</button>
+          <span class="pagination-info" id="qlog-page-info"></span>
+          <button class="btn btn-secondary btn-sm" id="qlog-next">Next →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANALYTICS ────────────────────────────────────────────────────────── -->
+    <div id="tab-analytics" class="tab-panel">
+      <div class="page-header">
+        <h1>Analytics</h1>
+        <p>Aggregated metrics for a given time range.</p>
+      </div>
+
+      <div class="card">
+        <div class="quick-btns">
+          <button class="quick-btn" data-days="7">7d</button>
+          <button class="quick-btn" data-days="30">30d</button>
+          <button class="quick-btn" data-days="90">90d</button>
+          <button class="quick-btn" data-days="0">All</button>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="an-from">From</label>
+            <input type="datetime-local" id="an-from">
+          </div>
+          <div class="form-group">
+            <label for="an-to">To</label>
+            <input type="datetime-local" id="an-to">
+          </div>
+        </div>
+        <button class="btn btn-primary" id="an-load-btn">Load</button>
+        <div id="analytics-content" style="margin-top:20px"></div>
+      </div>
+    </div>
+
+    <!-- JOBS ─────────────────────────────────────────────────────────────── -->
+    <div id="tab-jobs" class="tab-panel">
+      <div class="page-header">
+        <h1>Jobs</h1>
+        <p>Check the status of crawl and index jobs, or stop a running job.</p>
+      </div>
+
+      <div class="card">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="job-type">Job Type</label>
+            <select id="job-type">
+              <option value="crawl">Crawl</option>
+              <option value="index">Index</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:2">
+            <label for="job-id">Job ID</label>
+            <input type="text" id="job-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" class="mono">
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="job-check-btn">Check Status</button>
+          <button class="btn btn-danger" id="job-stop-btn">Stop Job</button>
+        </div>
+
+        <div id="job-content" style="margin-top:20px"></div>
+      </div>
+    </div>
+
+  </div><!-- /main-content -->
+</div><!-- /app-shell -->
 
 <script>
 const ANSWERER_URL = 'https://answerer-848760828618.us-central1.run.app';
 const BASE = '';
 
 let accessToken = null;
-let tenantId = null;
+let tenantId    = null;
+let qlogOffset  = 0;
+let qlogTotal   = 0;
+let qlogItems   = [];
+let activeQlogRow = null;
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function parseJWT(token) {
+  try { return JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }
+  catch(_) { return {}; }
+}
+
+function authHeaders() {
+  return {'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json'};
+}
+
+async function api(url, opts = {}) {
+  const res = await fetch(url, {headers: authHeaders(), ...opts});
+  // Only auto-logout on 401 from the admin console itself, not from the answerer service
+  if (res.status === 401 && !url.startsWith(ANSWERER_URL)) { logout(); throw new Error('Unauthorised'); }
+  return res;
+}
+
+function setMsg(id, text, ok) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = ok ? 'msg-ok' : 'msg-err';
+  if (ok && text) setTimeout(() => { el.textContent = ''; }, 4000);
+}
+
+function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—'; }
+
+function sourceBadge(s) {
+  const cls = {rag:'badge-blue', curated:'badge-green', guardrail:'badge-yellow', error:'badge-red'};
+  return `<span class="badge ${cls[s]||'badge-gray'}">${s||'—'}</span>`;
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function msVal(v) {
+  if (v == null) return '<span class="ms-val">—</span>';
+  const cls = v > 5000 ? 'very-slow' : v > 2000 ? 'slow' : '';
+  return `<span class="ms-val${cls?' '+cls:''}">${v}</span>`;
+}
+
+// Wire range+number pairs inside a container so they stay in sync.
+function wireRangeInputs(container) {
+  (container||document).querySelectorAll('.range-row').forEach(row => {
+    const range = row.querySelector('input[type=range]');
+    const num   = row.querySelector('.range-num');
+    if (!range || !num) return;
+    range.oninput = () => { num.value = range.value; };
+    num.oninput   = () => { const v = parseFloat(num.value); if (!isNaN(v)) range.value = v; };
+  });
+}
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-function parseJWT(token) {
-  try {
-    const payload = token.split('.')[1];
-    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-  } catch (_) { return {}; }
-}
-
 async function login() {
-  const email = document.getElementById('email').value.trim();
+  const email    = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
-  const btn = document.getElementById('login-btn');
-  const errEl = document.getElementById('login-error');
-  errEl.textContent = '';
-  btn.disabled = true;
-  btn.textContent = 'Signing in…';
+  const btn      = document.getElementById('login-btn');
+  document.getElementById('login-error').textContent = '';
+  btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const res = await fetch(`${BASE}/v1/auth/login`, {
+    const res  = await fetch(`${BASE}/v1/auth/login`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({email, password}),
     });
     const data = await res.json();
-    if (!res.ok) { errEl.textContent = data.detail || 'Login failed'; return; }
+    if (!res.ok) {
+      document.getElementById('login-error').textContent = data.message || data.detail || 'Login failed';
+      return;
+    }
     accessToken = data.access_token;
     const claims = parseJWT(accessToken);
     tenantId = claims.tenant_id || null;
-    document.getElementById('logged-in-as').textContent = email;
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('dashboard').style.display = 'block';
-    document.getElementById('tenant-id').textContent = tenantId || '—';
-    loadQuota();
-  } catch (e) {
-    errEl.textContent = 'Network error';
+    document.getElementById('logged-in-as').textContent      = email;
+    document.getElementById('sidebar-user-label').textContent = email;
+    document.getElementById('sidebar-tenant-id').textContent  = tenantId ? tenantId.substring(0,8)+'…' : '—';
+    document.getElementById('tenant-id').textContent          = tenantId || '—';
+    document.getElementById('login-screen').style.display    = 'none';
+    document.getElementById('topbar').style.display          = 'flex';
+    document.getElementById('app-shell').removeAttribute('hidden');
+    loadOverview();
+  } catch(e) {
+    document.getElementById('login-error').textContent = 'Network error';
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Sign in';
+    btn.disabled = false; btn.textContent = 'Sign in';
   }
 }
 
 async function logout() {
   try {
     await fetch(`${BASE}/v1/auth/logout`, {
-      method: 'POST',
-      headers: {'Authorization': `Bearer ${accessToken}`},
+      method: 'POST', headers: {'Authorization': `Bearer ${accessToken}`}
     });
-  } catch (_) {}
-  accessToken = null;
-  tenantId = null;
-  document.getElementById('dashboard').style.display = 'none';
+  } catch(_) {}
+  accessToken = null; tenantId = null;
+  document.getElementById('app-shell').setAttribute('hidden', '');
+  document.getElementById('topbar').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('password').value = '';
-  document.getElementById('usage-result').style.display = 'none';
+  showTab('overview');
 }
 
-document.getElementById('password').addEventListener('keydown', e => {
-  if (e.key === 'Enter') login();
+document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+document.getElementById('login-btn').addEventListener('click', login);
+document.getElementById('logout-btn').addEventListener('click', logout);
+
+// Auto-login from vendor console impersonation token in URL
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const token  = params.get('token');
+  if (!token) return;
+  history.replaceState({}, '', window.location.pathname);
+  const claims = parseJWT(token);
+  if (!claims.tenant_id) return;
+  accessToken = token;
+  tenantId    = claims.tenant_id;
+  document.getElementById('logged-in-as').textContent      = claims.sub || 'vendor-admin';
+  document.getElementById('sidebar-user-label').textContent = claims.sub || 'vendor-admin';
+  document.getElementById('sidebar-tenant-id').textContent  = tenantId.substring(0,8)+'…';
+  document.getElementById('tenant-id').textContent          = tenantId;
+  document.getElementById('login-screen').style.display    = 'none';
+  document.getElementById('topbar').style.display          = 'flex';
+  document.getElementById('app-shell').removeAttribute('hidden');
+  loadOverview();
+})();
+
+// ── Tab navigation ────────────────────────────────────────────────────────────
+
+const tabLoaders = {
+  settings:   loadSettings,
+  guardrails: loadGuardrails,
+  curated:    loadCurated,
+};
+
+function showTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  const panel  = document.getElementById('tab-' + name);
+  const navBtn = document.querySelector(`.nav-item[data-tab="${name}"]`);
+  if (panel)  panel.classList.add('active');
+  if (navBtn) navBtn.classList.add('active');
+  if (tabLoaders[name]) tabLoaders[name]();
+}
+
+document.getElementById('sidebar-nav').addEventListener('click', e => {
+  const item = e.target.closest('.nav-item[data-tab]');
+  if (item) showTab(item.dataset.tab);
 });
 
-// ── Quota ──────────────────────────────────────────────────────────────────────
+// ── Overview ──────────────────────────────────────────────────────────────────
+
+function loadOverview() {
+  loadQuota();
+  loadUsage();
+  loadWidgetKey();
+}
+
+async function loadWidgetKey() {
+  const el = document.getElementById('widget-key-value');
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/widget-key`);
+    const d   = await res.json();
+    if (!res.ok) { el.style.filter = ''; el.textContent = `Error: ${d.detail || JSON.stringify(d)}`; return; }
+    el.textContent = d.widget_api_key;
+    el.style.filter = 'blur(4px)';
+    el.onclick = () => { el.style.filter = el.style.filter ? '' : 'blur(4px)'; };
+  } catch(e) { el.style.filter = ''; el.textContent = `Error: ${e.message}`; }
+}
 
 async function loadQuota() {
   const el = document.getElementById('quota-content');
-  el.className = 'loading';
-  el.textContent = 'Loading…';
+  el.className = 'loading'; el.textContent = 'Loading…';
   try {
-    const res = await fetch(`${BASE}/v1/quota`, {
-      headers: {'Authorization': `Bearer ${accessToken}`},
-    });
-    if (res.status === 401) { logout(); return; }
+    const res = await api(`${BASE}/v1/quota`);
     if (res.status === 404) {
       el.className = '';
-      el.innerHTML = '<span style="color:#999;font-size:.88rem">No quota has been set yet.</span>';
+      el.innerHTML = '<span class="muted">No quota has been set yet.</span>';
       return;
     }
-    const data = await res.json();
+    const d = await res.json();
     el.className = '';
     el.innerHTML = `
-      <div class="info-row">
-        <span class="info-label">Questions quota</span>
-        <span class="info-value"><strong>${data.questions_quota.toLocaleString()}</strong> per 30 days</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Last updated</span>
-        <span class="info-value">${new Date(data.updated_at).toLocaleString()}</span>
-      </div>`;
-  } catch (e) {
-    el.className = '';
-    el.textContent = 'Failed to load quota.';
-  }
+      <div class="data-row"><span class="data-label">Questions quota</span><span class="data-value"><strong>${d.questions_quota.toLocaleString()}</strong> per 30 days</span></div>
+      <div class="data-row"><span class="data-label">Last updated</span><span class="data-value">${fmtDate(d.updated_at)}</span></div>`;
+  } catch(e) { el.className = 'msg-err'; el.textContent = 'Failed to load quota.'; }
 }
 
-// ── Usage ──────────────────────────────────────────────────────────────────────
-
-async function checkUsage() {
-  if (!tenantId) { alert('No tenant ID in token.'); return; }
-  const btn = document.getElementById('check-usage-btn');
-  const resultEl = document.getElementById('usage-result');
-  btn.disabled = true;
-  btn.textContent = 'Checking…';
-  resultEl.style.display = 'none';
-  resultEl.className = 'usage-result';
+async function loadUsage() {
+  const el = document.getElementById('usage-content');
+  el.className = 'loading'; el.textContent = 'Loading…';
+  document.getElementById('suspend-btn').style.display   = 'none';
+  document.getElementById('reinstate-btn').style.display = 'none';
   try {
-    const res = await fetch(`${ANSWERER_URL}/v1/tenants/${tenantId}/usage`, {
-      headers: {'Authorization': `Bearer ${accessToken}`},
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      resultEl.className = 'usage-result error';
-      resultEl.textContent = `Error ${res.status}: ${data.detail || JSON.stringify(data)}`;
-    } else {
-      resultEl.innerHTML = `<pre style="white-space:pre-wrap;font-size:.82rem">${JSON.stringify(data, null, 2)}</pre>`;
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/usage`);
+    const d   = await res.json();
+    if (!res.ok) { el.className = 'msg-err'; el.textContent = `Error: ${d.message||JSON.stringify(d)}`; return; }
+    const pct = d.questions_quota ? Math.round(d.questions_asked / d.questions_quota * 100) : 0;
+    el.className = '';
+    el.innerHTML = `
+      <div class="data-row"><span class="data-label">Questions asked</span><span class="data-value">${d.questions_asked.toLocaleString()} / ${d.questions_quota.toLocaleString()} <span class="muted">(${pct}%)</span></span></div>
+      <div class="data-row"><span class="data-label">Tokens used</span><span class="data-value">${d.tokens_used.toLocaleString()}</span></div>
+      <div class="data-row"><span class="data-label">Period</span><span class="data-value">${fmtDate(d.period_start)} – ${fmtDate(d.period_end)}</span></div>`;
+    document.getElementById('tenant-status').innerHTML = d.suspended
+      ? '<span class="badge badge-red">Suspended</span>'
+      : '<span class="badge badge-green">Active</span>';
+    document.getElementById('suspend-btn').style.display   = d.suspended ? 'none' : 'inline-flex';
+    document.getElementById('reinstate-btn').style.display = d.suspended ? 'inline-flex' : 'none';
+  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load usage.'; } }
+}
+
+document.getElementById('suspend-btn').addEventListener('click', async () => {
+  if (!confirm('Suspend this tenant? Widget requests will be rejected.')) return;
+  const btn = document.getElementById('suspend-btn');
+  btn.disabled = true;
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/suspend`, {method: 'POST'});
+    setMsg('suspend-msg', res.ok ? 'Tenant suspended.' : 'Failed to suspend.', res.ok);
+    if (res.ok) loadUsage();
+  } finally { btn.disabled = false; }
+});
+
+document.getElementById('reinstate-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('reinstate-btn');
+  btn.disabled = true;
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/reinstate`, {method: 'POST'});
+    setMsg('suspend-msg', res.ok ? 'Tenant reinstated.' : 'Failed to reinstate.', res.ok);
+    if (res.ok) loadUsage();
+  } finally { btn.disabled = false; }
+});
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+async function loadSettings() {
+  const el = document.getElementById('settings-content');
+  el.className = 'loading'; el.textContent = 'Loading…';
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/settings`);
+    const d   = await res.json();
+    if (!res.ok) { el.className = 'msg-err'; el.textContent = `Error: ${d.message||JSON.stringify(d)}`; return; }
+    el.className = '';
+    el.innerHTML = `
+      <div class="slider-field">
+        <label for="s-top_k">Top-K — chunks retrieved per query</label>
+        <div class="range-row">
+          <input type="range" id="s-top_k" min="1" max="20" step="1" value="${d.top_k}">
+          <input type="number" class="range-num" min="1" max="20" step="1" value="${d.top_k}">
+        </div>
+      </div>
+      <div class="slider-field">
+        <label for="s-score_threshold">Score Threshold — minimum vector similarity</label>
+        <div class="range-row">
+          <input type="range" id="s-score_threshold" min="0" max="1" step="0.01" value="${d.score_threshold}">
+          <input type="number" class="range-num" min="0" max="1" step="0.01" value="${d.score_threshold}">
+        </div>
+      </div>
+      <div class="slider-field">
+        <label for="s-curated_threshold">Curated Match Threshold — similarity to serve curated answer</label>
+        <div class="range-row">
+          <input type="range" id="s-curated_threshold" min="0" max="1" step="0.01" value="${d.curated_threshold}">
+          <input type="number" class="range-num" min="0" max="1" step="0.01" value="${d.curated_threshold}">
+        </div>
+      </div>
+      <div class="slider-field">
+        <label for="s-max_question_chars">Max Question Length — character limit on incoming questions</label>
+        <div class="range-row">
+          <input type="range" id="s-max_question_chars" min="100" max="5000" step="100" value="${d.max_question_chars}">
+          <input type="number" class="range-num" min="100" max="5000" step="1" value="${d.max_question_chars}">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="settings-save-btn">Save Settings</button>
+      <span id="settings-msg" style="margin-left:12px"></span>`;
+    wireRangeInputs(el);
+    document.getElementById('settings-save-btn').addEventListener('click', saveSettings);
+  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load settings.'; } }
+
+  // Also load KB list
+  loadKBList();
+}
+
+async function loadKBList() {
+  const el = document.getElementById('kb-list-content');
+  if (!el) return;
+  el.className = 'loading'; el.textContent = 'Loading…';
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawls`);
+    if (!res.ok) { el.className = 'msg-err'; el.textContent = 'Failed to load KBs.'; return; }
+    const d = await res.json();
+    const items = d.items || [];
+    const activeCount = items.filter(kb => kb.status !== 'failed').length;
+    const atLimit = activeCount >= 5;
+
+    // Show/hide add card based on limit
+    const addCard = document.getElementById('kb-add-card');
+    if (addCard) {
+      addCard.style.display = atLimit ? 'none' : '';
     }
-  } catch (e) {
-    resultEl.className = 'usage-result error';
-    resultEl.textContent = 'Network error reaching Answerer Service.';
+
+    if (!items.length) {
+      el.className = '';
+      el.innerHTML = '<div class="empty-state">No knowledge bases yet.</div>';
+      return;
+    }
+
+    el.className = '';
+    const countHtml = `<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px">${activeCount} / 5 knowledge bases used</div>`;
+    const listHtml = items.map(kb => {
+      const pct = kb.progress ? (kb.progress.pages_crawled || 0) : 0;
+      const statusLabel = {pending: 'Pending', running: `Crawling (${pct} pages)`, completed: 'Ready', failed: 'Failed'}[kb.status] || kb.status;
+      const statusClass = {pending: 'badge-yellow', running: 'badge-blue', completed: 'badge-green', failed: 'badge-red'}[kb.status] || '';
+      const tokensHtml = (kb.status === 'completed' && kb.embed_tokens != null)
+        ? `<span class="muted" style="font-size:0.75rem">${kb.embed_tokens.toLocaleString()} embed tokens</span>`
+        : '';
+      return `<div class="data-row" style="flex-direction:column;align-items:flex-start;gap:2px;padding:10px 0;border-bottom:1px solid #f0f0f0">
+        <span class="mono" style="font-size:0.8rem;word-break:break-all">${esc(kb.url||'Unknown URL')}</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+          <span class="badge ${statusClass}">${esc(statusLabel)}</span>
+          ${tokensHtml}
+          <span class="muted" style="font-size:0.75rem">${fmtDate(kb.created)}</span>
+          ${kb.error ? `<span style="color:#c00;font-size:0.75rem">${esc(kb.error)}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    el.innerHTML = countHtml + listHtml;
+  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load knowledge bases.'; } }
+}
+
+// ── Create KB ─────────────────────────────────────────────────────────────────
+
+document.getElementById('main-content').addEventListener('click', async e => {
+  if (e.target.id !== 'kb-create-btn') return;
+  const url      = document.getElementById('kb-url').value.trim();
+  const maxPages = parseInt(document.getElementById('kb-max-pages').value) || 10;
+  const msg      = document.getElementById('kb-create-msg');
+  const btn      = document.getElementById('kb-create-btn');
+  if (!url) { msg.style.color = '#c00'; msg.textContent = 'Enter a URL.'; return; }
+
+  btn.disabled = true;
+  msg.style.color = '#555';
+
+  try {
+    // Step 1: start crawl
+    msg.textContent = 'Starting crawl…';
+    const crawlRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl`, {method: 'POST', body: JSON.stringify({url, max_pages: maxPages})});
+    const crawlJob = await crawlRes.json();
+    if (!crawlRes.ok) { msg.style.color='#c00'; msg.textContent = `Crawl failed: ${crawlJob.detail||JSON.stringify(crawlJob)}`; btn.disabled=false; return; }
+
+    // Step 2: poll crawl until complete
+    const crawlId = crawlJob.job_id;
+    await pollJob(crawlId, 'crawl', (j) => {
+      const p = j.progress;
+      msg.textContent = `Crawling… ${p ? p.pages_crawled + ' pages' : ''}`;
+      loadKBList();
+    });
+
+    const statusRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${crawlId}`);
+    const finalCrawl = await statusRes.json();
+    if (finalCrawl.status === 'failed') { msg.style.color='#c00'; msg.textContent = `Crawl failed: ${finalCrawl.error||'unknown error'}`; btn.disabled=false; loadKBList(); return; }
+
+    // Step 3: start index
+    msg.textContent = 'Crawl complete. Starting indexing…';
+    const indexRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/index`, {method: 'POST', body: JSON.stringify({crawl_job_id: crawlId})});
+    const indexJob = await indexRes.json();
+    if (!indexRes.ok) { msg.style.color='#c00'; msg.textContent = `Index failed: ${indexJob.detail||JSON.stringify(indexJob)}`; btn.disabled=false; return; }
+
+    // Step 4: poll index
+    const idxFinal = await pollJob(indexJob.job_id, 'index', (j) => {
+      const p = j.progress;
+      msg.textContent = `Indexing… ${p ? p.pages_indexed + ' / ' + p.pages_total + ' pages' : ''}`;
+    });
+
+    // Show token count from final index progress
+    const embedTokens = idxFinal?.progress?.embed_tokens;
+    const tokenNote = embedTokens != null ? ` · ${embedTokens.toLocaleString()} embed tokens used` : '';
+
+    msg.style.color = '#1a7f37';
+    msg.textContent = `Knowledge base ready${tokenNote}.`;
+    document.getElementById('kb-url').value = '';
+    loadKBList();
+  } catch(e) {
+    msg.style.color = '#c00'; msg.textContent = `Error: ${e.message}`;
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Check Usage';
-    resultEl.style.display = 'block';
+  }
+});
+
+async function pollJob(jobId, type, onProgress) {
+  const endpoint = type === 'crawl'
+    ? `${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${jobId}`
+    : `${ANSWERER_URL}/v1/tenants/${tenantId}/index/${jobId}`;
+  while (true) {
+    await new Promise(r => setTimeout(r, 2000));
+    const res = await api(endpoint);
+    const job = await res.json();
+    if (job.status === 'completed' || job.status === 'failed') return job;
+    if (onProgress) onProgress(job);
   }
 }
+
+async function saveSettings() {
+  const body = {
+    top_k:               parseInt(document.getElementById('s-top_k').value),
+    score_threshold:     parseFloat(document.getElementById('s-score_threshold').value),
+    curated_threshold:   parseFloat(document.getElementById('s-curated_threshold').value),
+    max_question_chars:  parseInt(document.getElementById('s-max_question_chars').value),
+  };
+  const btn = document.getElementById('settings-save-btn');
+  btn.disabled = true;
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/settings`, {method: 'PUT', body: JSON.stringify(body)});
+    const d   = await res.json();
+    setMsg('settings-msg', res.ok ? 'Settings saved.' : `Error: ${d.message||JSON.stringify(d)}`, res.ok);
+  } catch(e) { setMsg('settings-msg', 'Network error.', false); }
+  finally { btn.disabled = false; }
+}
+
+// ── Guardrails ────────────────────────────────────────────────────────────────
+
+let guardrails = [];
+
+async function loadGuardrails() {
+  const el = document.getElementById('guardrails-list');
+  el.className = 'loading'; el.textContent = 'Loading…';
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/guardrails`);
+    const d   = await res.json();
+    if (!res.ok) { el.className = 'msg-err'; el.textContent = `Error: ${d.message||JSON.stringify(d)}`; return; }
+    guardrails = d.items || [];
+    renderGuardrails();
+  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load guardrails.'; } }
+}
+
+function renderGuardrails() {
+  const el = document.getElementById('guardrails-list');
+  if (!guardrails.length) {
+    el.className = ''; el.innerHTML = '<div class="empty-state">No guardrails yet.</div>'; return;
+  }
+  el.className = '';
+  el.innerHTML = `
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Threshold</th><th>Seeds</th><th>Enabled</th><th></th></tr></thead>
+      <tbody>${guardrails.map(g => `
+        <tr id="gr-row-${g.id}">
+          <td>
+            <strong>${esc(g.name)}</strong>
+            <div class="mono muted small">${esc(g.id)}</div>
+          </td>
+          <td class="nowrap">${g.threshold}</td>
+          <td>${g.seeds.map(s => `<span class="seed-tag">${esc(s)}</span>`).join('')}</td>
+          <td>
+            <label class="toggle">
+              <input type="checkbox" ${g.enabled ? 'checked' : ''} data-id="${g.id}" class="gr-toggle">
+              <span class="toggle-track"></span>
+            </label>
+          </td>
+          <td class="nowrap">
+            <button class="btn btn-secondary btn-sm" data-id="${g.id}" data-action="gr-edit">Edit</button>
+            <button class="btn btn-danger btn-sm" data-id="${g.id}" data-action="gr-delete" style="margin-left:6px">Delete</button>
+            <div id="gr-msg-${g.id}" style="margin-top:4px"></div>
+            <div id="gr-edit-${g.id}"></div>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>`;
+}
+
+document.getElementById('guardrails-list').addEventListener('change', async e => {
+  const input = e.target;
+  if (!input.classList.contains('gr-toggle')) return;
+  const id = input.dataset.id;
+  const msgEl = document.getElementById(`gr-msg-${id}`);
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/guardrails/${id}`, {
+      method: 'PUT', body: JSON.stringify({enabled: input.checked})
+    });
+    const d = await res.json();
+    if (res.ok) { const g = guardrails.find(x => x.id===id); if (g) g.enabled = input.checked; msgEl.className = 'msg-ok'; msgEl.textContent = input.checked ? 'Enabled.' : 'Disabled.'; setTimeout(() => msgEl.textContent = '', 3000); }
+    else { msgEl.className = 'msg-err'; msgEl.textContent = `Error: ${d.message||JSON.stringify(d)}`; input.checked = !input.checked; }
+  } catch(e) { msgEl.className = 'msg-err'; msgEl.textContent = 'Network error.'; input.checked = !input.checked; }
+});
+
+document.getElementById('guardrails-list').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  if (btn.dataset.action === 'gr-edit') {
+    openGuardrailEdit(id);
+  } else if (btn.dataset.action === 'gr-delete') {
+    await deleteGuardrail(id);
+  } else if (btn.dataset.action === 'gr-save') {
+    await saveGuardrail(id);
+  } else if (btn.dataset.action === 'gr-cancel') {
+    document.getElementById(`gr-edit-${id}`).innerHTML = '';
+  }
+});
+
+function openGuardrailEdit(id) {
+  const g = guardrails.find(x => x.id===id);
+  if (!g) return;
+  const el = document.getElementById(`gr-edit-${id}`);
+  if (el.innerHTML) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="edit-form">
+      <div class="form-group"><label>Name</label><input type="text" id="gr-e-name-${id}" value="${esc(g.name)}"></div>
+      <div class="form-group"><label>Seeds — one per line</label><textarea id="gr-e-seeds-${id}" rows="3">${esc(g.seeds.join('\n'))}</textarea></div>
+      <div class="form-group"><label>Response</label><textarea id="gr-e-response-${id}" rows="2">${esc(g.response)}</textarea></div>
+      <div class="slider-field">
+        <label for="gr-e-threshold-${id}">Threshold</label>
+        <div class="range-row">
+          <input type="range" id="gr-e-threshold-${id}" min="0" max="1" step="0.01" value="${g.threshold}">
+          <input type="number" class="range-num" min="0" max="1" step="0.01" value="${g.threshold}">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary btn-sm" data-id="${id}" data-action="gr-save">Save</button>
+        <button class="btn btn-secondary btn-sm" data-id="${id}" data-action="gr-cancel">Cancel</button>
+      </div>
+    </div>`;
+  wireRangeInputs(el);
+}
+
+async function saveGuardrail(id) {
+  const msgEl = document.getElementById(`gr-msg-${id}`);
+  const body = {
+    name:      document.getElementById(`gr-e-name-${id}`).value,
+    seeds:     document.getElementById(`gr-e-seeds-${id}`).value.split('\n').map(s => s.trim()).filter(Boolean),
+    response:  document.getElementById(`gr-e-response-${id}`).value,
+    threshold: parseFloat(document.getElementById(`gr-e-threshold-${id}`).value),
+  };
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/guardrails/${id}`, {method: 'PUT', body: JSON.stringify(body)});
+    const d   = await res.json();
+    if (res.ok) {
+      Object.assign(guardrails.find(x => x.id===id), d);
+      document.getElementById(`gr-edit-${id}`).innerHTML = '';
+      msgEl.className = 'msg-ok'; msgEl.textContent = 'Saved.'; setTimeout(() => msgEl.textContent = '', 4000);
+      renderGuardrails();
+    } else { msgEl.className = 'msg-err'; msgEl.textContent = `Error: ${d.message||JSON.stringify(d)}`; }
+  } catch(e) { msgEl.className = 'msg-err'; msgEl.textContent = 'Network error.'; }
+}
+
+async function deleteGuardrail(id) {
+  if (!confirm('Delete this guardrail?')) return;
+  const msgEl = document.getElementById(`gr-msg-${id}`);
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/guardrails/${id}`, {method: 'DELETE'});
+    if (res.ok) { guardrails = guardrails.filter(x => x.id!==id); renderGuardrails(); }
+    else { const d = await res.json(); msgEl.className = 'msg-err'; msgEl.textContent = `Error: ${d.message||JSON.stringify(d)}`; }
+  } catch(e) { msgEl.className = 'msg-err'; msgEl.textContent = 'Network error.'; }
+}
+
+document.getElementById('gr-add-btn').addEventListener('click', async () => {
+  const msgId = 'gr-add-msg';
+  const body = {
+    name:      document.getElementById('gr-name').value.trim(),
+    seeds:     document.getElementById('gr-seeds').value.split('\n').map(s => s.trim()).filter(Boolean),
+    response:  document.getElementById('gr-response').value.trim(),
+    threshold: parseFloat(document.getElementById('gr-threshold').value),
+  };
+  if (!body.name || !body.seeds.length || !body.response) {
+    setMsg(msgId, 'Name, seeds, and response are required.', false); return;
+  }
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/guardrails`, {method: 'POST', body: JSON.stringify(body)});
+    const d   = await res.json();
+    if (res.ok) {
+      guardrails.push(d);
+      renderGuardrails();
+      document.getElementById('gr-name').value     = '';
+      document.getElementById('gr-seeds').value    = '';
+      document.getElementById('gr-response').value = '';
+      document.getElementById('gr-threshold').value = '0.85';
+      document.querySelector('#tab-guardrails .slider-field input[type=range]').value = '0.85';
+      setMsg(msgId, 'Guardrail created.', true);
+    } else setMsg(msgId, `Error: ${d.message||JSON.stringify(d)}`, false);
+  } catch(e) { setMsg(msgId, 'Network error.', false); }
+});
+
+// ── Curated Answers ───────────────────────────────────────────────────────────
+
+let curatedAnswers = [];
+
+async function loadCurated() {
+  const el = document.getElementById('curated-list');
+  el.className = 'loading'; el.textContent = 'Loading…';
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/curated`);
+    const d   = await res.json();
+    if (!res.ok) { el.className = 'msg-err'; el.textContent = `Error: ${d.message||JSON.stringify(d)}`; return; }
+    curatedAnswers = d.items || [];
+    renderCurated();
+  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load curated answers.'; } }
+}
+
+function renderCurated() {
+  const el = document.getElementById('curated-list');
+  if (!curatedAnswers.length) {
+    el.className = ''; el.innerHTML = '<div class="empty-state">No curated answers yet.</div>'; return;
+  }
+  el.className = '';
+  el.innerHTML = `
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Question</th><th>Answer</th><th>Created</th><th></th></tr></thead>
+      <tbody>${curatedAnswers.map(c => `
+        <tr>
+          <td style="max-width:220px">
+            ${esc(c.question)}
+            <div class="mono muted small">${esc(c.id)}</div>
+          </td>
+          <td style="max-width:260px">${esc(c.answer)}</td>
+          <td class="nowrap small muted">${fmtDate(c.created)}</td>
+          <td class="nowrap">
+            <button class="btn btn-secondary btn-sm" data-id="${c.id}" data-action="ca-edit">Edit</button>
+            <button class="btn btn-danger btn-sm" data-id="${c.id}" data-action="ca-delete" style="margin-left:6px">Delete</button>
+            <div id="ca-msg-${c.id}" style="margin-top:4px"></div>
+            <div id="ca-edit-${c.id}"></div>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>`;
+}
+
+document.getElementById('curated-list').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  if (btn.dataset.action === 'ca-edit') {
+    openCuratedEdit(id);
+  } else if (btn.dataset.action === 'ca-delete') {
+    await deleteCurated(id);
+  } else if (btn.dataset.action === 'ca-save') {
+    await saveCurated(id);
+  } else if (btn.dataset.action === 'ca-cancel') {
+    document.getElementById(`ca-edit-${id}`).innerHTML = '';
+  }
+});
+
+function openCuratedEdit(id) {
+  const c = curatedAnswers.find(x => x.id===id);
+  if (!c) return;
+  const el = document.getElementById(`ca-edit-${id}`);
+  if (el.innerHTML) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="edit-form">
+      <div class="form-group"><label>Question</label><input type="text" id="ca-e-question-${id}" value="${esc(c.question)}"></div>
+      <div class="form-group"><label>Answer</label><textarea id="ca-e-answer-${id}" rows="3">${esc(c.answer)}</textarea></div>
+      <div class="btn-row">
+        <button class="btn btn-primary btn-sm" data-id="${id}" data-action="ca-save">Save</button>
+        <button class="btn btn-secondary btn-sm" data-id="${id}" data-action="ca-cancel">Cancel</button>
+      </div>
+    </div>`;
+}
+
+async function saveCurated(id) {
+  const msgEl = document.getElementById(`ca-msg-${id}`);
+  const body = {
+    question: document.getElementById(`ca-e-question-${id}`).value,
+    answer:   document.getElementById(`ca-e-answer-${id}`).value,
+  };
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/curated/${id}`, {method: 'PUT', body: JSON.stringify(body)});
+    const d   = await res.json();
+    if (res.ok) {
+      Object.assign(curatedAnswers.find(x => x.id===id), d);
+      document.getElementById(`ca-edit-${id}`).innerHTML = '';
+      msgEl.className = 'msg-ok'; msgEl.textContent = 'Saved.'; setTimeout(() => msgEl.textContent = '', 4000);
+      renderCurated();
+    } else { msgEl.className = 'msg-err'; msgEl.textContent = `Error: ${d.message||JSON.stringify(d)}`; }
+  } catch(e) { msgEl.className = 'msg-err'; msgEl.textContent = 'Network error.'; }
+}
+
+async function deleteCurated(id) {
+  if (!confirm('Delete this curated answer?')) return;
+  const msgEl = document.getElementById(`ca-msg-${id}`);
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/curated/${id}`, {method: 'DELETE'});
+    if (res.ok) { curatedAnswers = curatedAnswers.filter(x => x.id!==id); renderCurated(); }
+    else { const d = await res.json(); msgEl.className = 'msg-err'; msgEl.textContent = `Error: ${d.message||JSON.stringify(d)}`; }
+  } catch(e) { msgEl.className = 'msg-err'; msgEl.textContent = 'Network error.'; }
+}
+
+document.getElementById('ca-add-btn').addEventListener('click', async () => {
+  const msgId = 'ca-add-msg';
+  const body = {
+    question: document.getElementById('ca-question').value.trim(),
+    answer:   document.getElementById('ca-answer').value.trim(),
+  };
+  if (!body.question || !body.answer) { setMsg(msgId, 'Question and answer are required.', false); return; }
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/curated`, {method: 'POST', body: JSON.stringify(body)});
+    const d   = await res.json();
+    if (res.ok) {
+      curatedAnswers.push(d);
+      renderCurated();
+      document.getElementById('ca-question').value = '';
+      document.getElementById('ca-answer').value   = '';
+      setMsg(msgId, 'Answer created.', true);
+    } else setMsg(msgId, `Error: ${d.message||JSON.stringify(d)}`, false);
+  } catch(e) { setMsg(msgId, 'Network error.', false); }
+});
+
+// ── Question Log ──────────────────────────────────────────────────────────────
+
+async function loadQlog(offset) {
+  qlogOffset = offset;
+  activeQlogRow = null;
+  document.getElementById('qlog-detail-panel').innerHTML = '';
+  const el    = document.getElementById('qlog-content');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const limit   = parseInt(document.getElementById('qlog-limit').value) || 50;
+  const from    = document.getElementById('qlog-from').value;
+  const to      = document.getElementById('qlog-to').value;
+  const source  = document.getElementById('qlog-source').value;
+  const keyword = document.getElementById('qlog-keyword').value.trim();
+  const params  = new URLSearchParams({limit, offset});
+  if (from)    params.set('from',    new Date(from).toISOString());
+  if (to)      params.set('to',      new Date(to).toISOString());
+  if (source)  params.set('source',  source);
+  if (keyword) params.set('keyword', keyword);
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/qlog?${params}`);
+    const d   = await res.json();
+    if (!res.ok) { el.innerHTML = `<div class="msg-err">Error: ${d.message||JSON.stringify(d)}</div>`; return; }
+    qlogTotal = d.total;
+    qlogItems = d.items || [];
+    if (!qlogItems.length) {
+      el.innerHTML = '<div class="empty-state">No entries found.</div>';
+      document.getElementById('qlog-pagination').style.display = 'none'; return;
+    }
+    el.innerHTML = `
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Time</th><th>Words</th><th>Question</th><th>Source</th>
+          <th>Total ms</th><th>Embed ms</th><th>Vector ms</th><th>LLM ms</th>
+          <th>Ans tokens</th><th>Prompt tokens</th><th>Embed tokens</th>
+        </tr></thead>
+        <tbody id="qlog-tbody">${qlogItems.map((q, i) => `<tr data-idx="${i}" class="qlog-row">
+          <td class="nowrap small muted">${fmtDate(q.timestamp)}</td>
+          <td>${q.word_count ?? '—'}</td>
+          <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(q.question)}</td>
+          <td>${sourceBadge(q.source)}</td>
+          <td>${msVal(q.timing?.total_ms)}</td>
+          <td>${msVal(q.timing?.embed_ms)}</td>
+          <td>${msVal(q.timing?.vector_search_ms)}</td>
+          <td>${msVal(q.timing?.llm_ms)}</td>
+          <td class="ms-val">${q.answer_tokens ?? '—'}</td>
+          <td class="ms-val">${q.prompt_tokens ?? '—'}</td>
+          <td class="ms-val">${q.embed_tokens ?? '—'}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>`;
+    const pag = document.getElementById('qlog-pagination');
+    pag.style.display = 'flex';
+    document.getElementById('qlog-prev').disabled = offset === 0;
+    document.getElementById('qlog-next').disabled = offset + limit >= qlogTotal;
+    document.getElementById('qlog-page-info').textContent = `${offset + 1}–${Math.min(offset + limit, qlogTotal)} of ${qlogTotal}`;
+
+    document.getElementById('qlog-tbody').addEventListener('click', e => {
+      const row = e.target.closest('.qlog-row');
+      if (!row) return;
+      const idx = parseInt(row.dataset.idx);
+      showQlogDetail(idx, row);
+    });
+  } catch(e) { if (e.message !== 'Unauthorised') el.innerHTML = '<div class="msg-err">Failed to load question log.</div>'; }
+}
+
+function showQlogDetail(idx, row) {
+  const q = qlogItems[idx];
+  if (!q) return;
+  if (activeQlogRow) activeQlogRow.classList.remove('active-row');
+  row.classList.add('active-row');
+  activeQlogRow = row;
+
+  const t = q.timing || {};
+  const chunkHtml = (q.chunks || []).map(c => `
+    <div class="chunk-mini">
+      <div class="chunk-mini-head">
+        <span>${esc(c.source)}</span>
+        <span>score: ${c.score?.toFixed ? c.score.toFixed(3) : c.score}</span>
+        <span>${c.tokens ?? ''} tokens</span>
+      </div>
+      <div class="chunk-mini-body">${esc(c.text)}</div>
+    </div>`).join('');
+
+  document.getElementById('qlog-detail-panel').innerHTML = `
+    <div class="qlog-detail">
+      <div class="detail-grid">
+        <span class="detail-label">Request ID</span><span class="detail-val mono">${esc(q.request_id)}</span>
+        <span class="detail-label">Time</span><span class="detail-val">${fmtDate(q.timestamp)}</span>
+        <span class="detail-label">Source</span><span class="detail-val">${sourceBadge(q.source)}</span>
+        ${q.guardrail_name ? `<span class="detail-label">Guardrail</span><span class="detail-val">${esc(q.guardrail_name)}</span>` : ''}
+        ${q.matched_question ? `<span class="detail-label">Matched Q</span><span class="detail-val">${esc(q.matched_question)}</span>` : ''}
+        ${q.error ? `<span class="detail-label">Error</span><span class="detail-val msg-err">${esc(q.error)}</span>` : ''}
+      </div>
+      <div class="detail-label" style="margin-bottom:6px">Question</div>
+      <div class="detail-answer">${esc(q.question)}</div>
+      ${q.answer ? `<div class="detail-label" style="margin-bottom:6px">Answer</div><div class="detail-answer">${esc(q.answer)}</div>` : ''}
+      <div class="detail-grid" style="margin-bottom:10px">
+        <span class="detail-label">Total ms</span><span class="detail-val ms-val">${t.total_ms ?? '—'}</span>
+        <span class="detail-label">Embed ms</span><span class="detail-val ms-val">${t.embed_ms ?? '—'}</span>
+        <span class="detail-label">Guardrail ms</span><span class="detail-val ms-val">${t.guardrail_check_ms ?? '—'}</span>
+        <span class="detail-label">Vector ms</span><span class="detail-val ms-val">${t.vector_search_ms ?? '—'}</span>
+        <span class="detail-label">LLM ms</span><span class="detail-val ms-val">${t.llm_ms ?? '—'}</span>
+        <span class="detail-label">Prompt tokens</span><span class="detail-val ms-val">${q.prompt_tokens ?? '—'}</span>
+        <span class="detail-label">Answer tokens</span><span class="detail-val ms-val">${q.answer_tokens ?? '—'}</span>
+        <span class="detail-label">Embed tokens</span><span class="detail-val ms-val">${q.embed_tokens ?? '—'}</span>
+      </div>
+      ${chunkHtml ? `<div class="detail-label" style="margin-bottom:6px">Chunks (${(q.chunks||[]).length})</div>${chunkHtml}` : ''}
+    </div>`;
+}
+
+document.getElementById('qlog-search-btn').addEventListener('click', () => loadQlog(0));
+document.getElementById('qlog-prev').addEventListener('click', () => {
+  const limit = parseInt(document.getElementById('qlog-limit').value) || 50;
+  loadQlog(Math.max(0, qlogOffset - limit));
+});
+document.getElementById('qlog-next').addEventListener('click', () => {
+  const limit = parseInt(document.getElementById('qlog-limit').value) || 50;
+  loadQlog(qlogOffset + limit);
+});
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+
+document.querySelectorAll('.quick-btn[data-days]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const days = parseInt(btn.dataset.days);
+    const now  = new Date();
+    const toInput  = document.getElementById('an-to');
+    const fromInput = document.getElementById('an-from');
+    toInput.value = now.toISOString().slice(0,16);
+    if (days === 0) {
+      fromInput.value = '';
+    } else {
+      const from = new Date(now.getTime() - days * 86400000);
+      fromInput.value = from.toISOString().slice(0,16);
+    }
+  });
+});
+
+document.getElementById('an-load-btn').addEventListener('click', async () => {
+  const el   = document.getElementById('analytics-content');
+  const from = document.getElementById('an-from').value;
+  const to   = document.getElementById('an-to').value;
+  if (!to) { el.innerHTML = '<div class="msg-err">To date is required.</div>'; return; }
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const params = new URLSearchParams({to: new Date(to).toISOString()});
+  if (from) params.set('from', new Date(from).toISOString());
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/analytics?${params}`);
+    const d   = await res.json();
+    if (!res.ok) { el.innerHTML = `<div class="msg-err">Error: ${d.message||JSON.stringify(d)}</div>`; return; }
+
+    const totalQ = d.total_questions ?? d.questions_asked ?? 0;
+    const src    = d.source_breakdown || {};
+    const avgMs  = d.avg_response_ms ?? d.avg_response_time_ms ?? null;
+    const totTok = d.total_tokens ?? d.tokens_used ?? null;
+
+    el.innerHTML = `
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-card-label">Total Questions</div>
+          <div class="stat-card-value">${totalQ.toLocaleString()}</div>
+        </div>
+        ${avgMs != null ? `<div class="stat-card">
+          <div class="stat-card-label">Avg Response</div>
+          <div class="stat-card-value">${avgMs}</div>
+          <div class="stat-card-sub">ms</div>
+        </div>` : ''}
+        ${totTok != null ? `<div class="stat-card">
+          <div class="stat-card-label">Total Tokens</div>
+          <div class="stat-card-value">${totTok.toLocaleString()}</div>
+        </div>` : ''}
+      </div>
+      ${Object.keys(src).length ? `<div class="stat-cards">
+        ${['rag','curated','guardrail','error'].map(k => src[k] != null ? `
+        <div class="stat-card">
+          <div class="stat-card-label">${k}</div>
+          <div class="stat-card-value">${src[k].toLocaleString()}</div>
+        </div>` : '').join('')}
+      </div>` : ''}
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:.78rem;color:var(--text-muted)">Raw JSON</summary>
+        <pre style="font-family:var(--mono);font-size:.78rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;overflow-x:auto;margin-top:8px">${JSON.stringify(d, null, 2)}</pre>
+      </details>`;
+  } catch(e) { if (e.message !== 'Unauthorised') el.innerHTML = '<div class="msg-err">Failed to load analytics.</div>'; }
+});
+
+// ── Jobs ──────────────────────────────────────────────────────────────────────
+
+function renderJobProgress(p) {
+  if (!p) return '';
+  const indexingKeys = ['chunks_created','vectors_upserted','embed_tokens','embed_batches','pages_failed'];
+  const hasIndexing = indexingKeys.some(k => p[k] != null);
+  let html = '';
+  if (p.pages_crawled != null || p.pages_indexed != null || p.pages_total != null) {
+    html += `<div class="data-row"><span class="data-label">Pages</span><span class="data-value">${p.pages_indexed ?? p.pages_crawled ?? 0}${p.pages_total ? ' / ' + p.pages_total : ''}</span></div>`;
+  }
+  if (hasIndexing) {
+    html += `<div class="progress-grid" style="margin-top:10px">`;
+    if (p.chunks_created != null)   html += `<div class="progress-cell"><div class="progress-cell-label">Chunks</div><div class="progress-cell-value">${p.chunks_created.toLocaleString()}</div></div>`;
+    if (p.vectors_upserted != null) html += `<div class="progress-cell"><div class="progress-cell-label">Vectors</div><div class="progress-cell-value">${p.vectors_upserted.toLocaleString()}</div></div>`;
+    if (p.embed_tokens != null)     html += `<div class="progress-cell"><div class="progress-cell-label">Embed Tokens</div><div class="progress-cell-value">${p.embed_tokens.toLocaleString()}</div></div>`;
+    if (p.embed_batches != null)    html += `<div class="progress-cell"><div class="progress-cell-label">Batches</div><div class="progress-cell-value">${p.embed_batches.toLocaleString()}</div></div>`;
+    if (p.pages_failed != null)     html += `<div class="progress-cell"><div class="progress-cell-label">Pages Failed</div><div class="progress-cell-value">${p.pages_failed.toLocaleString()}</div></div>`;
+    html += '</div>';
+  }
+  return html;
+}
+
+document.getElementById('job-check-btn').addEventListener('click', async () => {
+  const type = document.getElementById('job-type').value;
+  const id   = document.getElementById('job-id').value.trim();
+  const el   = document.getElementById('job-content');
+  if (!id) { el.innerHTML = '<div class="msg-err">Job ID is required.</div>'; return; }
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/${type}/${id}`);
+    const d   = await res.json();
+    if (!res.ok) { el.innerHTML = `<div class="msg-err">Error: ${d.message||JSON.stringify(d)}</div>`; return; }
+    const statusCls = {pending:'badge-yellow', running:'badge-blue', completed:'badge-green', failed:'badge-red'};
+    el.innerHTML = `
+      <div class="card" style="margin:0">
+        <div class="data-row"><span class="data-label">Job ID</span><span class="data-value mono">${esc(d.job_id)}</span></div>
+        <div class="data-row"><span class="data-label">Status</span><span class="data-value"><span class="badge ${statusCls[d.status]||'badge-gray'}">${d.status}</span></span></div>
+        <div class="data-row"><span class="data-label">Created</span><span class="data-value">${fmtDate(d.created)}</span></div>
+        <div class="data-row"><span class="data-label">Started</span><span class="data-value">${fmtDate(d.started)}</span></div>
+        <div class="data-row"><span class="data-label">Completed</span><span class="data-value">${fmtDate(d.completed)}</span></div>
+        ${d.error ? `<div class="data-row"><span class="data-label">Error</span><span class="data-value msg-err">${esc(d.error)}</span></div>` : ''}
+        ${d.progress ? renderJobProgress(d.progress) : ''}
+      </div>`;
+  } catch(e) { if (e.message !== 'Unauthorised') el.innerHTML = '<div class="msg-err">Network error.</div>'; }
+});
+
+document.getElementById('job-stop-btn').addEventListener('click', async () => {
+  const type = document.getElementById('job-type').value;
+  const id   = document.getElementById('job-id').value.trim();
+  const el   = document.getElementById('job-content');
+  if (!id) { el.innerHTML = '<div class="msg-err">Job ID is required.</div>'; return; }
+  if (!confirm(`Stop ${type} job ${id}?`)) return;
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/${type}/${id}`, {method: 'DELETE'});
+    el.innerHTML = res.ok
+      ? '<div class="msg-ok">Job stopped.</div>'
+      : `<div class="msg-err">Stop failed (${res.status}).</div>`;
+  } catch(e) { el.innerHTML = '<div class="msg-err">Network error.</div>'; }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+wireRangeInputs(document.getElementById('tab-guardrails'));
 </script>
 </body>
 </html>

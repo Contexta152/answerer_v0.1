@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ask</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #111; display: flex; justify-content: center; padding: 40px 16px; }
+    .container { width: 100%; max-width: 720px; }
+    h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 24px; }
+    label { display: block; font-size: 0.8rem; font-weight: 500; color: #555; margin-bottom: 4px; }
+    input, textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.95rem; font-family: inherit; background: #fff; }
+    input:focus, textarea:focus { outline: none; border-color: #666; }
+    textarea { resize: vertical; min-height: 80px; }
+    .field { margin-bottom: 16px; }
+    button { padding: 10px 20px; background: #111; color: #fff; border: none; border-radius: 6px; font-size: 0.95rem; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #answer-box { margin-top: 24px; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; min-height: 80px; font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; }
+    #answer-box.empty { color: #aaa; }
+    #error { margin-top: 12px; color: #c00; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Ask a Question</h1>
+
+  <div class="field">
+    <label for="widget-key">Widget Key</label>
+    <input type="password" id="widget-key" placeholder="wk_…" autocomplete="off">
+  </div>
+
+  <div class="field">
+    <label for="question">Question</label>
+    <textarea id="question" placeholder="What would you like to know?"></textarea>
+  </div>
+
+  <button id="ask-btn">Ask</button>
+
+  <div id="error"></div>
+  <div id="answer-box" class="empty">Answer will appear here…</div>
+</div>
+
+<script>
+const TENANT_ID   = 'ed8fe501-86dc-443a-bc53-7e8f48db82c3';
+const GATEWAY_URL = 'https://widget-gateway-848760828618.us-central1.run.app';
+
+const widgetKeyEl = document.getElementById('widget-key');
+const questionEl  = document.getElementById('question');
+const askBtn      = document.getElementById('ask-btn');
+const answerBox   = document.getElementById('answer-box');
+const errorEl     = document.getElementById('error');
+
+// Persist widget key in localStorage
+const STORAGE_KEY = 'answerer_widget_key';
+widgetKeyEl.value = localStorage.getItem(STORAGE_KEY) || '';
+widgetKeyEl.addEventListener('change', () => localStorage.setItem(STORAGE_KEY, widgetKeyEl.value.trim()));
+
+// Submit on Ctrl+Enter / Cmd+Enter
+questionEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) askBtn.click();
+});
+
+askBtn.addEventListener('click', async () => {
+  const widgetKey = widgetKeyEl.value.trim();
+  const question  = questionEl.value.trim();
+  errorEl.textContent = '';
+
+  if (!widgetKey) { errorEl.textContent = 'Enter a widget key.'; return; }
+  if (!question)  { errorEl.textContent = 'Enter a question.';   return; }
+
+  askBtn.disabled = true;
+  answerBox.className = '';
+  answerBox.textContent = '';
+
+  try {
+    const res = await fetch(`${GATEWAY_URL}/v1/ask/${TENANT_ID}/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-widget-key': widgetKey },
+      body: JSON.stringify({ question }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      errorEl.textContent = `Error ${res.status}: ${err.message || err.detail || res.statusText}`;
+      answerBox.className = 'empty';
+      answerBox.textContent = 'Answer will appear here…';
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop(); // keep incomplete line
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const chunk = line.slice(6);
+          if (chunk === '[DONE]') break;
+          answerBox.textContent += chunk;
+        }
+      }
+    }
+
+    if (!answerBox.textContent) {
+      answerBox.className = 'empty';
+      answerBox.textContent = 'Answer will appear here…';
+    }
+  } catch (e) {
+    errorEl.textContent = `Network error: ${e.message}`;
+  } finally {
+    askBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

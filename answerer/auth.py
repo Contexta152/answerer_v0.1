@@ -23,9 +23,9 @@ async def require_admin_jwt(
 ) -> UUID:
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authorization header")
-    secret = os.environ.get("JWT_SECRET")
+    secret = os.environ.get("ADMIN_JWT_SECRET")
     if not secret:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="JWT_SECRET not configured")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="ADMIN_JWT_SECRET not configured")
     try:
         payload = jwt.decode(credentials.credentials, secret, algorithms=[_ALGORITHM])
         tenant_id_str = payload.get("tenant_id")

@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NHS Demo — Grounded Answers</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #f0f4f8;
+      color: #1a1a2e;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: #005EB8;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-logo {
+      width: 48px;
+      height: 48px;
+      background: #fff;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      font-weight: 900;
+      color: #005EB8;
+      letter-spacing: -0.5px;
+      flex-shrink: 0;
+    }
+    .header-text h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .header-text p {
+      font-size: 0.82rem;
+      color: rgba(255,255,255,0.75);
+      margin-top: 2px;
+    }
+
+    /* ── Main layout ── */
+    .main {
+      max-width: 760px;
+      margin: 48px auto;
+      padding: 0 20px;
+    }
+
+    .intro {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .intro h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #003087;
+      margin-bottom: 8px;
+    }
+    .intro p {
+      color: #555;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    /* ── Question pills ── */
+    .pill-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #777;
+      margin-bottom: 10px;
+    }
+    .pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    .pill {
+      padding: 8px 14px;
+      border: 1.5px solid #005EB8;
+      border-radius: 20px;
+      background: #fff;
+      color: #005EB8;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      line-height: 1.3;
+    }
+    .pill:hover { background: #e8f0fb; }
+    .pill.active { background: #005EB8; color: #fff; }
+
+    /* ── Ask card ── */
+    .ask-card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 28px;
+    }
+    .ask-card label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 8px;
+    }
+    .ask-card textarea {
+      width: 100%;
+      border: 1.5px solid #dce3ed;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      color: #1a1a2e;
+      resize: vertical;
+      min-height: 80px;
+      transition: border-color 0.15s;
+    }
+    .ask-card textarea:focus { outline: none; border-color: #005EB8; }
+    .ask-card textarea::placeholder { color: #aaa; }
+
+    .ask-footer {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 14px;
+    }
+    .btn-ask {
+      padding: 11px 28px;
+      background: #005EB8;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-ask:hover { background: #004b99; }
+    .btn-ask:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Modal overlay ── */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .overlay.open { display: flex; }
+
+    .modal {
+      background: #fff;
+      border-radius: 14px;
+      width: 100%;
+      max-width: 680px;
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.22);
+      overflow: hidden;
+    }
+
+    /* ── Modal header ── */
+    .modal-header {
+      background: #005EB8;
+      padding: 18px 24px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .modal-header-text { flex: 1; }
+    .modal-header-text .label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: rgba(255,255,255,0.65);
+      margin-bottom: 4px;
+    }
+    .modal-header-text .question-text {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      line-height: 1.4;
+    }
+    .btn-close {
+      background: rgba(255,255,255,0.15);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 1.1rem;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .btn-close:hover { background: rgba(255,255,255,0.25); }
+
+    /* ── Modal body ── */
+    .modal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+
+    /* Loading dots */
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #888;
+      font-size: 0.9rem;
+    }
+    .dots span {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #005EB8;
+      animation: pulse 1.2s infinite ease-in-out;
+    }
+    .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes pulse {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    /* Answer text */
+    .answer-text {
+      font-size: 0.95rem;
+      line-height: 1.7;
+      color: #1a1a2e;
+    }
+    .answer-text p { margin-bottom: 12px; }
+    .answer-text p:last-child { margin-bottom: 0; }
+    .answer-text strong { font-weight: 600; }
+    .answer-text em { font-style: italic; }
+    .answer-text ul, .answer-text ol {
+      margin: 8px 0 12px 20px;
+    }
+    .answer-text li { margin-bottom: 4px; }
+
+    /* Error */
+    .answer-error {
+      color: #c0392b;
+      font-size: 0.9rem;
+    }
+
+    /* ── Sources ── */
+    .sources-section {
+      border-top: 1.5px solid #eee;
+      margin-top: 20px;
+      padding-top: 16px;
+    }
+    .sources-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #888;
+      margin-bottom: 10px;
+    }
+    .sources-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .sources-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .source-num {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #e8f0fb;
+      color: #005EB8;
+      font-size: 0.7rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+    .source-link {
+      color: #005EB8;
+      font-size: 0.85rem;
+      word-break: break-all;
+      text-decoration: none;
+    }
+    .source-link:hover { text-decoration: underline; }
+
+    /* ── Modal footer ── */
+    .modal-footer {
+      padding: 14px 24px;
+      border-top: 1px solid #eee;
+      display: flex;
+      justify-content: flex-end;
+      flex-shrink: 0;
+    }
+    .btn-secondary {
+      padding: 9px 22px;
+      background: transparent;
+      color: #005EB8;
+      border: 1.5px solid #005EB8;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-secondary:hover { background: #e8f0fb; }
+
+    /* ── Powered by ── */
+    .powered {
+      text-align: center;
+      margin-top: 48px;
+      font-size: 0.78rem;
+      color: #aaa;
+    }
+    .powered a { color: #005EB8; text-decoration: none; }
+    .powered a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">NHS</div>
+  <div class="header-text">
+    <h1>NHS Knowledge Assistant</h1>
+    <p>Powered by Grounded Answers — AI answers sourced directly from NHS content</p>
+  </div>
+</div>
+
+<div class="main">
+  <div class="intro">
+    <h2>Ask the NHS Knowledge Base</h2>
+    <p>Select a question below or type your own. The AI will answer using only verified NHS source material.</p>
+  </div>
+
+  <div class="pill-label">Suggested questions</div>
+  <div class="pills">
+    <button class="pill" data-q="How do I register with an NHS GP?">How do I register with an NHS GP?</button>
+    <button class="pill" data-q="What are the symptoms of a stroke and when should I call 999?">What are the symptoms of a stroke and when should I call 999?</button>
+    <button class="pill" data-q="How do I get a repeat prescription from my GP?">How do I get a repeat prescription from my GP?</button>
+    <button class="pill" data-q="When should I go to A&amp;E instead of calling NHS 111?">When should I go to A&amp;E instead of calling NHS 111?</button>
+    <button class="pill" data-q="What mental health support is available on the NHS?">What mental health support is available on the NHS?</button>
+  </div>
+
+  <div class="ask-card">
+    <label for="question-input">Your question</label>
+    <textarea id="question-input" placeholder="Select a question above or type your own…"></textarea>
+    <div class="ask-footer">
+      <button class="btn-ask" id="ask-btn">Ask AI</button>
+    </div>
+  </div>
+
+  <div class="powered">
+    Grounded Answers &mdash; AI answers from your content &mdash; <a href="https://groundedanswers.co" target="_blank">groundedanswers.co</a>
+  </div>
+</div>
+
+<!-- ── Answer modal ── -->
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-question">
+    <div class="modal-header">
+      <div class="modal-header-text">
+        <div class="label">Your question</div>
+        <div class="question-text" id="modal-question"></div>
+      </div>
+      <button class="btn-close" id="btn-close" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="modal-body" id="modal-body">
+      <div class="loading" id="loading">
+        <div class="dots"><span></span><span></span><span></span></div>
+        <span>Searching NHS sources&hellip;</span>
+      </div>
+      <div class="answer-text" id="answer-text" style="display:none"></div>
+      <div class="answer-error" id="answer-error" style="display:none"></div>
+      <div class="sources-section" id="sources-section" style="display:none">
+        <div class="sources-label">Sources</div>
+        <ul class="sources-list" id="sources-list"></ul>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-secondary" id="btn-close-footer">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TENANT_ID  = 'ed8fe501-86dc-443a-bc53-7e8f48db82c3';
+const WIDGET_KEY = '';  // set via NHS_DEMO_WIDGET_KEY env var at deploy time
+const GATEWAY    = 'https://widget-gateway-848760828618.us-central1.run.app';
+
+const questionEl    = document.getElementById('question-input');
+const askBtn        = document.getElementById('ask-btn');
+const overlay       = document.getElementById('overlay');
+const modalQuestion = document.getElementById('modal-question');
+const loading       = document.getElementById('loading');
+const answerText    = document.getElementById('answer-text');
+const answerError   = document.getElementById('answer-error');
+const sourcesSection = document.getElementById('sources-section');
+const sourcesList   = document.getElementById('sources-list');
+
+// ── Pill selection ──────────────────────────────────────────────────────────
+document.querySelectorAll('.pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    questionEl.value = pill.dataset.q;
+  });
+});
+
+questionEl.addEventListener('input', () => {
+  const val = questionEl.value.trim();
+  document.querySelectorAll('.pill').forEach(pill => {
+    pill.classList.toggle('active', pill.dataset.q === val);
+  });
+});
+
+// ── Modal helpers ───────────────────────────────────────────────────────────
+function openModal(question) {
+  modalQuestion.textContent = question;
+  loading.style.display = 'flex';
+  answerText.style.display = 'none';
+  answerText.innerHTML = '';
+  answerError.style.display = 'none';
+  answerError.textContent = '';
+  sourcesSection.style.display = 'none';
+  sourcesList.innerHTML = '';
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  overlay.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.getElementById('btn-close').addEventListener('click', closeModal);
+document.getElementById('btn-close-footer').addEventListener('click', closeModal);
+overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// ── Markdown rendering (minimal) ───────────────────────────────────────────
+function renderMarkdown(raw) {
+  // Escape HTML
+  let s = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Bold + italic
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Convert double newlines to paragraph breaks
+  const paras = s.split(/\n{2,}/);
+  return paras.map(p => {
+    const lines = p.trim();
+    if (!lines) return '';
+    // Bullet lists
+    if (/^[-•]\s/.test(lines)) {
+      const items = lines.split('\n').filter(l => /^[-•]\s/.test(l));
+      return '<ul>' + items.map(l => `<li>${l.replace(/^[-•]\s/, '')}</li>`).join('') + '</ul>';
+    }
+    // Numbered lists
+    if (/^\d+\.\s/.test(lines)) {
+      const items = lines.split('\n').filter(l => /^\d+\.\s/.test(l));
+      return '<ol>' + items.map(l => `<li>${l.replace(/^\d+\.\s/, '')}</li>`).join('') + '</ol>';
+    }
+    return `<p>${lines.replace(/\n/g, '<br>')}</p>`;
+  }).join('');
+}
+
+// Accumulate raw answer text, re-render on each delta
+let rawAnswer = '';
+
+function appendDelta(text) {
+  if (loading.style.display !== 'none') {
+    loading.style.display = 'none';
+    answerText.style.display = 'block';
+  }
+  rawAnswer += text;
+  answerText.innerHTML = renderMarkdown(rawAnswer);
+}
+
+function showSources(sources) {
+  if (!sources || sources.length === 0) return;
+  sourcesList.innerHTML = '';
+  sources.forEach((src, i) => {
+    const li = document.createElement('li');
+    const num = document.createElement('span');
+    num.className = 'source-num';
+    num.textContent = i + 1;
+    const link = document.createElement('a');
+    link.className = 'source-link';
+    link.href = src;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = src;
+    li.appendChild(num);
+    li.appendChild(link);
+    sourcesList.appendChild(li);
+  });
+  sourcesSection.style.display = 'block';
+}
+
+function showError(msg) {
+  loading.style.display = 'none';
+  answerError.style.display = 'block';
+  answerError.textContent = `Something went wrong: ${msg}`;
+}
+
+// ── Ask flow ────────────────────────────────────────────────────────────────
+askBtn.addEventListener('click', async () => {
+  const question = questionEl.value.trim();
+  if (!question) return;
+
+  rawAnswer = '';
+  openModal(question);
+  askBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${GATEWAY}/v1/ask/${TENANT_ID}/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-widget-key': WIDGET_KEY,
+      },
+      body: JSON.stringify({ question }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showError(err.message || err.detail || res.statusText);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let currentEvent = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          let data;
+          try { data = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (currentEvent === 'delta') {
+            appendDelta(data.text || '');
+          } else if (currentEvent === 'done') {
+            showSources(data.sources);
+            // Ensure loading spinner is hidden if no text was received
+            if (loading.style.display !== 'none') {
+              loading.style.display = 'none';
+              answerText.style.display = 'block';
+              answerText.innerHTML = '<em>No answer returned.</em>';
+            }
+          } else if (currentEvent === 'error') {
+            showError(data.message || 'Unknown error');
+          }
+        } else if (line === '') {
+          currentEvent = '';
+        }
+      }
+    }
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    askBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

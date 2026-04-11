@@ -49,6 +49,7 @@ def _make_log_entry(
     chunks: list[Chunk] | None = None,
     prompt_tokens: int | None = None,
     answer_tokens: int | None = None,
+    embed_tokens: int | None = None,
     error: str | None = None,
     timing: Timing | None = None,
 ) -> QuestionLogEntry:
@@ -65,6 +66,7 @@ def _make_log_entry(
         guardrail_name=guardrail_name,
         chunks=chunks or [],
         prompt_tokens=prompt_tokens,
+        embed_tokens=embed_tokens,
         error=error,
         timing=timing,
     )
@@ -179,10 +181,11 @@ async def ask(tenant_id: UUID, question: str) -> dict:
     # 2. Embed question
     from services.embed import embed_text
     embed_start = _now_ms()
-    vector = await embed_text(question, tenant_id, task_type="RETRIEVAL_QUERY")
+    vector, embed_tokens = await embed_text(question, tenant_id, task_type="RETRIEVAL_QUERY")
     embed_ms = _now_ms() - embed_start
 
     # 3. Guardrail check
+    guardrail_start = _now_ms()
     guardrail_hits = await qdrant_store.similarity_search(
         tenant_id,
         vector,
@@ -190,6 +193,7 @@ async def ask(tenant_id: UUID, question: str) -> dict:
         score_threshold=0.0,
         payload_filter={"type": "guardrail"},
     )
+    guardrail_check_ms = _now_ms() - guardrail_start
     for hit in guardrail_hits:
         payload = hit["payload"]
         if not payload.get("enabled", True):
@@ -202,7 +206,8 @@ async def ask(tenant_id: UUID, question: str) -> dict:
                 _make_log_entry(
                     request_id, question, answer, "guardrail",
                     guardrail_name=payload.get("name"),
-                    timing=Timing(embed_ms=embed_ms, total_ms=total_ms),
+                    embed_tokens=embed_tokens,
+                    timing=Timing(embed_ms=embed_ms, guardrail_check_ms=guardrail_check_ms, total_ms=total_ms),
                 ),
             )
             return {"answer": answer, "source": "guardrail", "request_id": str(request_id)}
@@ -227,7 +232,8 @@ async def ask(tenant_id: UUID, question: str) -> dict:
                 request_id, question, answer, "curated",
                 matched_question=hit["payload"].get("question"),
                 curated_match_type="semantic",
-                timing=Timing(embed_ms=embed_ms, curated_check_ms=curated_ms, total_ms=total_ms),
+                embed_tokens=embed_tokens,
+                timing=Timing(embed_ms=embed_ms, guardrail_check_ms=guardrail_check_ms, curated_check_ms=curated_ms, total_ms=total_ms),
             ),
         )
         return {"answer": answer, "source": "curated", "request_id": str(request_id)}
@@ -264,8 +270,10 @@ async def ask(tenant_id: UUID, question: str) -> dict:
             _make_log_entry(
                 request_id, question, None, "error",
                 error=str(exc),
+                embed_tokens=embed_tokens,
                 timing=Timing(
-                    embed_ms=embed_ms, curated_check_ms=curated_ms,
+                    embed_ms=embed_ms, guardrail_check_ms=guardrail_check_ms,
+                    curated_check_ms=curated_ms,
                     vector_search_ms=rag_ms, total_ms=total_ms,
                 ),
             ),
@@ -282,8 +290,10 @@ async def ask(tenant_id: UUID, question: str) -> dict:
             chunks=chunks,
             prompt_tokens=prompt_tokens,
             answer_tokens=answer_tokens,
+            embed_tokens=embed_tokens,
             timing=Timing(
                 embed_ms=embed_ms,
+                guardrail_check_ms=guardrail_check_ms,
                 curated_check_ms=curated_ms,
                 vector_search_ms=rag_ms,
                 llm_ms=llm_ms,
@@ -328,10 +338,11 @@ async def ask_stream(tenant_id: UUID, question: str) -> AsyncIterator[str]:
     # 2. Embed question
     from services.embed import embed_text
     embed_start = _now_ms()
-    vector = await embed_text(question, tenant_id, task_type="RETRIEVAL_QUERY")
+    vector, embed_tokens = await embed_text(question, tenant_id, task_type="RETRIEVAL_QUERY")
     embed_ms = _now_ms() - embed_start
 
     # 3. Guardrail check
+    guardrail_start = _now_ms()
     guardrail_hits = await qdrant_store.similarity_search(
         tenant_id,
         vector,
@@ -339,6 +350,7 @@ async def ask_stream(tenant_id: UUID, question: str) -> AsyncIterator[str]:
         score_threshold=0.0,
         payload_filter={"type": "guardrail"},
     )
+    guardrail_check_ms = _now_ms() - guardrail_start
     for hit in guardrail_hits:
         payload = hit["payload"]
         if not payload.get("enabled", True):
@@ -353,7 +365,8 @@ async def ask_stream(tenant_id: UUID, question: str) -> AsyncIterator[str]:
                 _make_log_entry(
                     request_id, question, answer, "guardrail",
                     guardrail_name=payload.get("name"),
-                    timing=Timing(embed_ms=embed_ms, total_ms=total_ms),
+                    embed_tokens=embed_tokens,
+                    timing=Timing(embed_ms=embed_ms, guardrail_check_ms=guardrail_check_ms, total_ms=total_ms),
                 ),
             )
             return
@@ -380,7 +393,8 @@ async def ask_stream(tenant_id: UUID, question: str) -> AsyncIterator[str]:
                 request_id, question, answer, "curated",
                 matched_question=hit["payload"].get("question"),
                 curated_match_type="semantic",
-                timing=Timing(embed_ms=embed_ms, curated_check_ms=curated_ms, total_ms=total_ms),
+                embed_tokens=embed_tokens,
+                timing=Timing(embed_ms=embed_ms, guardrail_check_ms=guardrail_check_ms, curated_check_ms=curated_ms, total_ms=total_ms),
             ),
         )
         return
@@ -421,8 +435,10 @@ async def ask_stream(tenant_id: UUID, question: str) -> AsyncIterator[str]:
             _make_log_entry(
                 request_id, question, None, "error",
                 error=str(exc),
+                embed_tokens=embed_tokens,
                 timing=Timing(
-                    embed_ms=embed_ms, curated_check_ms=curated_ms,
+                    embed_ms=embed_ms, guardrail_check_ms=guardrail_check_ms,
+                    curated_check_ms=curated_ms,
                     vector_search_ms=rag_ms, total_ms=total_ms,
                 ),
             ),
@@ -432,7 +448,8 @@ async def ask_stream(tenant_id: UUID, question: str) -> AsyncIterator[str]:
     llm_ms = _now_ms() - llm_start
     total_ms = _now_ms() - start_ms
 
-    yield _sse_event("done", {"source": "rag", "request_id": str(request_id)})
+    unique_sources = list(dict.fromkeys(c.source for c in chunks if c.source))
+    yield _sse_event("done", {"source": "rag", "request_id": str(request_id), "sources": unique_sources})
 
     # 7. Log non-blocking
     _log_async(
@@ -440,8 +457,10 @@ async def ask_stream(tenant_id: UUID, question: str) -> AsyncIterator[str]:
         _make_log_entry(
             request_id, question, full_answer, "rag",
             chunks=chunks,
+            embed_tokens=embed_tokens,
             timing=Timing(
                 embed_ms=embed_ms,
+                guardrail_check_ms=guardrail_check_ms,
                 curated_check_ms=curated_ms,
                 vector_search_ms=rag_ms,
                 llm_ms=llm_ms,

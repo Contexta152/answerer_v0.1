@@ -1,11 +1,14 @@
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+logging.basicConfig(level=logging.INFO)
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from routers import auth, payments, quota, tenants
+from routers import auth, payments, quota, tenants, webhook
 from storage.postgres import create_tables
 
 _STATIC = Path(__file__).parent / "static"
@@ -23,6 +26,7 @@ app.include_router(auth.router)
 app.include_router(tenants.router)
 app.include_router(quota.router)
 app.include_router(payments.router)
+app.include_router(webhook.router)
 
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 

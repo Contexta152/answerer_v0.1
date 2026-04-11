@@ -1,9 +1,15 @@
+import secrets
+from typing import Optional
+from uuid import UUID
+
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from auth import require_admin_jwt
+from auth import require_admin_jwt, require_vendor_service_key
 from models import TokenPair
 from services import auth as auth_svc
+from storage import postgres
 
 router = APIRouter()
 
@@ -36,3 +42,30 @@ async def refresh(body: _RefreshBody):
 @router.post("/v1/auth/logout", status_code=204)
 async def logout(claims: dict = Depends(require_admin_jwt)):
     await auth_svc.logout(claims["sub"])
+
+
+class _ImpersonateBody(BaseModel):
+    email: Optional[str] = "vendor-admin"
+
+
+@router.post("/v1/internal/impersonate/{tenant_id}")
+async def impersonate(tenant_id: UUID, _: None = Depends(require_vendor_service_key)):
+    token = auth_svc.issue_impersonation_token(str(tenant_id), "vendor-admin")
+    return {"access_token": token}
+
+
+class _CreateUserBody(BaseModel):
+    email: str
+    tenant_id: UUID
+    name: Optional[str] = None
+
+
+@router.post("/v1/internal/users", status_code=201)
+async def create_user(_: None = Depends(require_vendor_service_key), body: _CreateUserBody = None):
+    existing = await postgres.get_user_by_email(body.email)
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User with this email already exists")
+    temp_password = secrets.token_urlsafe(12)
+    password_hash = bcrypt.hashpw(temp_password.encode(), bcrypt.gensalt()).decode()
+    await postgres.create_user(body.email, password_hash, body.tenant_id)
+    return {"email": body.email, "temp_password": temp_password}

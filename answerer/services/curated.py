@@ -32,7 +32,7 @@ async def create_curated_answer(
     curated_id = uuid4()
     created = datetime.now(timezone.utc)
 
-    vector = await embed_text(question, tenant_id)
+    vector, _embed_tok = await embed_text(question, tenant_id)
 
     row = await pg.insert_curated_answer(
         tenant_id, curated_id, question, answer, created
@@ -81,7 +81,7 @@ async def update_curated_answer(
     # Re-embed with current question (may be unchanged) to keep Qdrant payload in sync
     new_question = fields.get("question", existing["question"])
     new_answer = fields.get("answer", existing["answer"])
-    vector = await embed_text(new_question, tenant_id)
+    vector, _embed_tok = await embed_text(new_question, tenant_id)
 
     await qdrant_store.upsert_vectors(
         tenant_id,

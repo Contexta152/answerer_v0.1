@@ -36,6 +36,17 @@ async def create_tables() -> None:
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ls_orders (
+                ls_order_id TEXT PRIMARY KEY,
+                tenant_id   UUID NOT NULL,
+                email       TEXT NOT NULL,
+                name        TEXT,
+                variant_id  TEXT,
+                plan        TEXT,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
 
 
 # ── Users ────────────────────────────────────────────────────────────────────
@@ -131,6 +142,27 @@ async def upsert_tenant_quota(
         tenant_id, plan, questions_quota, tenant_created_at, now,
     )
     return dict(row)
+
+
+async def get_tenant_emails() -> dict:
+    """Return {tenant_id_str: email} for all known ls_orders."""
+    pool = await _get_pool()
+    rows = await pool.fetch("SELECT tenant_id, email FROM ls_orders")
+    return {str(r["tenant_id"]): r["email"] for r in rows}
+
+
+async def get_ls_order(ls_order_id: str) -> Optional[dict]:
+    pool = await _get_pool()
+    row = await pool.fetchrow("SELECT ls_order_id, tenant_id FROM ls_orders WHERE ls_order_id = $1", ls_order_id)
+    return dict(row) if row else None
+
+
+async def insert_ls_order(ls_order_id: str, tenant_id: UUID, email: str, name: Optional[str], variant_id: Optional[str], plan: Optional[str]) -> None:
+    pool = await _get_pool()
+    await pool.execute(
+        "INSERT INTO ls_orders (ls_order_id, tenant_id, email, name, variant_id, plan) VALUES ($1, $2, $3, $4, $5, $6)",
+        ls_order_id, tenant_id, email, name, variant_id, plan,
+    )
 
 
 async def list_tenant_quotas() -> list[dict]:

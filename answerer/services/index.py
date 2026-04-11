@@ -79,7 +79,7 @@ async def start_index(tenant_id: UUID, crawl_job_id: UUID) -> Job:
     if active is not None:
         raise RuntimeError("index_job_already_running")
 
-    return await jobs_storage.create_job(tenant_id, "index")
+    return await jobs_storage.create_job(tenant_id, "index", url=str(crawl_job_id))
 
 
 async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> None:
@@ -94,35 +94,66 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
         pages = await jobs_storage.get_crawl_pages(crawl_job_id, tenant_id)
         pages_total = len(pages)
 
+        total_chunks_created = 0
+        total_vectors_upserted = 0
+        total_embed_tokens = 0
+        total_embed_batches = 0
+        total_pages_failed = 0
+
         for idx, page in enumerate(pages, start=1):
-            text = _extract_text(page["content"])
-            chunks = _chunk_text(text, settings.chunk_size, settings.chunk_overlap)
-            if not chunks:
-                continue
+            try:
+                text = _extract_text(page["content"])
+                chunks = _chunk_text(text, settings.chunk_size, settings.chunk_overlap)
+                if not chunks:
+                    continue
 
-            embeddings = await _embed_texts(tenant_id, chunks)
+                embeddings, batch_tokens, batch_count = await _embed_texts(tenant_id, chunks)
 
-            vectors = [
-                {
-                    "id": str(uuid.uuid4()),
-                    "vector": embedding,
-                    "payload": {"source": page["url"], "text": chunk},
-                }
-                for chunk, embedding in zip(chunks, embeddings)
-            ]
-            await qdrant.upsert_vectors(tenant_id, vectors)
+                vectors = [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "vector": embedding,
+                        "payload": {"source": page["url"], "text": chunk},
+                    }
+                    for chunk, embedding in zip(chunks, embeddings)
+                ]
+                await qdrant.upsert_vectors(tenant_id, vectors)
+
+                total_chunks_created += len(chunks)
+                total_vectors_upserted += len(vectors)
+                total_embed_tokens += batch_tokens
+                total_embed_batches += batch_count
+            except Exception as page_exc:
+                logger.warning("Failed to index page %s: %s", page.get("url"), page_exc)
+                total_pages_failed += 1
 
             await jobs_storage.update_job_status(
                 job_id,
                 "running",
-                progress={"pages_indexed": idx, "pages_total": pages_total},
+                progress={
+                    "pages_indexed": idx,
+                    "pages_total": pages_total,
+                    "chunks_created": total_chunks_created,
+                    "vectors_upserted": total_vectors_upserted,
+                    "embed_tokens": total_embed_tokens,
+                    "embed_batches": total_embed_batches,
+                    "pages_failed": total_pages_failed,
+                },
             )
 
         await jobs_storage.update_job_status(
             job_id,
             "completed",
             completed=datetime.now(timezone.utc),
-            progress={"pages_indexed": pages_total, "pages_total": pages_total},
+            progress={
+                "pages_indexed": pages_total,
+                "pages_total": pages_total,
+                "chunks_created": total_chunks_created,
+                "vectors_upserted": total_vectors_upserted,
+                "embed_tokens": total_embed_tokens,
+                "embed_batches": total_embed_batches,
+                "pages_failed": total_pages_failed,
+            },
         )
     except Exception as exc:
         logger.exception("Index job %s failed for tenant %s", job_id, tenant_id)
@@ -159,15 +190,21 @@ def _chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
     return chunks
 
 
-async def _embed_texts(tenant_id: UUID, texts: list[str]) -> list[list[float]]:
-    """Embed a list of texts via Vertex AI, returning one float vector per text."""
+async def _embed_texts(tenant_id: UUID, texts: list[str]) -> tuple[list[list[float]], int, int]:
+    """
+    Embed a list of texts via Vertex AI, returning (vectors, total_tokens, batch_count).
+    total_tokens is the sum of token counts across all batches (0 if unavailable).
+    batch_count is the number of Vertex AI API calls made.
+    """
     project = os.environ["GOOGLE_CLOUD_PROJECT"]
     location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 
-    def _call() -> list[list[float]]:
+    def _call() -> tuple[list[list[float]], int, int]:
         vertexai.init(project=project, location=location)
         model = TextEmbeddingModel.from_pretrained(_EMBEDDING_MODEL)
         results: list[list[float]] = []
+        total_tokens = 0
+        batch_count = 0
         for i in range(0, len(texts), _EMBED_BATCH_SIZE):
             batch = texts[i : i + _EMBED_BATCH_SIZE]
             inputs = [
@@ -175,7 +212,13 @@ async def _embed_texts(tenant_id: UUID, texts: list[str]) -> list[list[float]]:
                 for t in batch
             ]
             embeddings = model.get_embeddings(inputs)
-            results.extend(e.values for e in embeddings)
-        return results
+            batch_count += 1
+            for e in embeddings:
+                results.append(e.values)
+                try:
+                    total_tokens += e.statistics.token_count
+                except Exception:
+                    pass
+        return results, total_tokens, batch_count
 
     return await asyncio.to_thread(_call)

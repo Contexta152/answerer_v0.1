@@ -28,7 +28,7 @@ async def _fetch_answerer_summary() -> list[dict]:
         return resp.json().get("items", [])
 
 
-def _build_summary(activity: dict, quota_row: Optional[dict]) -> TenantSummary:
+def _build_summary(activity: dict, quota_row: Optional[dict], email: Optional[str] = None) -> TenantSummary:
     plan = quota_row["plan"] if quota_row else "unknown"
     questions_quota = quota_row["questions_quota"] if quota_row else 0
     questions_30d = activity.get("questions_30d", 0) or 0
@@ -42,6 +42,7 @@ def _build_summary(activity: dict, quota_row: Optional[dict]) -> TenantSummary:
     return TenantSummary(
         tenant_id=activity["tenant_id"],
         name=activity["name"],
+        email=email,
         plan=plan,
         questions_quota=questions_quota,
         suspended=activity.get("suspended", False),
@@ -69,12 +70,13 @@ async def list_tenants(
 ) -> dict:
     activity_items = await _fetch_answerer_summary()
     quota_map = {r["tenant_id"]: r for r in await postgres.list_tenant_quotas()}
+    email_map = await postgres.get_tenant_emails()
 
     summaries = []
     for item in activity_items:
         tid = str(item["tenant_id"])
         quota_row = quota_map.get(tid) or quota_map.get(UUID(tid))
-        summary = _build_summary(item, quota_row)
+        summary = _build_summary(item, quota_row, email=email_map.get(tid))
         if suspended is not None and summary.suspended != suspended:
             continue
         summaries.append(summary)

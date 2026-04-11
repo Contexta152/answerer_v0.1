@@ -38,8 +38,9 @@ async def get_vendor_tenants_summary() -> list[TenantActivitySummary]:
     return result
 
 
-async def create_tenant(name: str) -> TenantCreated:
-    tenant_id = uuid4()
+async def create_tenant(name: str, tenant_id: UUID | None = None) -> TenantCreated:
+    if tenant_id is None:
+        tenant_id = uuid4()
     widget_api_key = secrets.token_urlsafe(32)
     row = await postgres.insert_tenant(tenant_id, name, widget_api_key)
     return TenantCreated(
@@ -91,6 +92,10 @@ async def get_settings(tenant_id: UUID) -> Settings | None:
     if settings_row is None:
         return Settings()
     return Settings(**settings_row)
+
+
+async def get_widget_key(tenant_id: UUID) -> str | None:
+    return await postgres.get_widget_key(tenant_id)
 
 
 async def update_settings(tenant_id: UUID, settings: Settings) -> Settings | None:

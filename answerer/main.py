@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from routers import analytics, ask, crawl, curated, guardrails, index, qlog, tenants
 from storage.postgres import create_tables
@@ -13,6 +14,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Answerer Service", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://admin-console-848760828618.us-central1.run.app"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 app.include_router(tenants.router)
 app.include_router(crawl.router)

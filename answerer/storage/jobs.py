@@ -19,6 +19,11 @@ def _row_to_job(row) -> Job:
             pages_crawled=p.get("pages_crawled"),
             pages_indexed=p.get("pages_indexed"),
             pages_total=p.get("pages_total"),
+            chunks_created=p.get("chunks_created"),
+            vectors_upserted=p.get("vectors_upserted"),
+            embed_tokens=p.get("embed_tokens"),
+            embed_batches=p.get("embed_batches"),
+            pages_failed=p.get("pages_failed"),
         )
     return Job(
         job_id=row["job_id"],
@@ -28,10 +33,11 @@ def _row_to_job(row) -> Job:
         completed=row["completed"],
         error=row["error"],
         progress=progress,
+        url=row["url"] if "url" in row.keys() else None,
     )
 
 
-async def create_job(tenant_id: UUID, job_type: str) -> Job:
+async def create_job(tenant_id: UUID, job_type: str, url: str | None = None) -> Job:
     """Insert a new job record with status 'pending' and return it."""
     pool = await get_pool()
     job_id = uuid4()
@@ -39,14 +45,15 @@ async def create_job(tenant_id: UUID, job_type: str) -> Job:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO jobs (job_id, tenant_id, job_type, status, created)
-            VALUES ($1, $2, $3, 'pending', $4)
-            RETURNING job_id, status, created, started, completed, error, progress
+            INSERT INTO jobs (job_id, tenant_id, job_type, status, created, url)
+            VALUES ($1, $2, $3, 'pending', $4, $5)
+            RETURNING job_id, status, created, started, completed, error, progress, url
             """,
             job_id,
             tenant_id,
             job_type,
             now,
+            url,
         )
     return _row_to_job(row)
 
@@ -57,7 +64,7 @@ async def get_job(tenant_id: UUID, job_id: UUID) -> Optional[Job]:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT job_id, status, created, started, completed, error, progress
+            SELECT job_id, status, created, started, completed, error, progress, url
             FROM jobs
             WHERE job_id = $1 AND tenant_id = $2
             """,

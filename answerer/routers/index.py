@@ -44,7 +44,7 @@ async def start_index(
     tenant_id: UUID,
     body: _StartIndexBody,
     background_tasks: BackgroundTasks,
-    _: None = Depends(require_service_key),
+    _: None = Depends(_require_service_or_admin),
 ) -> Job:
     try:
         job = await index_service.start_index(tenant_id, body.crawl_job_id)

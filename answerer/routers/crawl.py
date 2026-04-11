@@ -43,12 +43,40 @@ async def _require_service_or_admin(
     )
 
 
+@router.get("/v1/tenants/{tenant_id}/crawls")
+async def list_crawls(
+    tenant_id: UUID,
+    _: None = Depends(_require_service_or_admin),
+):
+    from storage import postgres as pg_store
+    rows = await pg_store.get_crawl_jobs(tenant_id)
+    import json as _json
+    items = []
+    for r in rows:
+        progress = None
+        if r["progress"] is not None:
+            p = r["progress"]
+            if isinstance(p, str):
+                p = _json.loads(p)
+            progress = p
+        items.append({
+            "job_id": str(r["job_id"]),
+            "url": r["url"],
+            "status": r["status"],
+            "created": r["created"].isoformat(),
+            "progress": progress,
+            "error": r["error"],
+            "embed_tokens": r.get("embed_tokens"),
+        })
+    return {"items": items}
+
+
 @router.post("/v1/tenants/{tenant_id}/crawl", status_code=202, response_model=Job)
 async def start_crawl(
     tenant_id: UUID,
     body: _CrawlRequest,
     background_tasks: BackgroundTasks,
-    _: None = Depends(require_service_key),
+    _: None = Depends(_require_service_or_admin),
 ) -> Job:
     return await crawl_service.start_crawl(
         tenant_id, body.url, body.max_pages, background_tasks

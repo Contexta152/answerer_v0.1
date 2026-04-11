@@ -43,6 +43,13 @@ async def start_crawl(
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
+    kb_count = await pg_store.count_active_crawl_jobs(tenant_id)
+    if kb_count >= 5:
+        raise HTTPException(
+            status_code=409,
+            detail="Maximum of 5 knowledge bases allowed. Delete one to add another.",
+        )
+
     active = await jobs_store.get_active_job(tenant_id, "crawl")
     if active is not None:
         raise HTTPException(
@@ -50,7 +57,7 @@ async def start_crawl(
             detail="A crawl job is already running for this tenant",
         )
 
-    job = await jobs_store.create_job(tenant_id, "crawl")
+    job = await jobs_store.create_job(tenant_id, "crawl", url=url)
     background_tasks.add_task(_run_crawl, job.job_id, tenant_id, url, max_pages)
     return job
 
@@ -98,6 +105,8 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
         parsed_seed = urlparse(seed_url)
         base_netloc = parsed_seed.netloc
         base_scheme = parsed_seed.scheme
+        # Normalise seed path: /guide and /guide/ both give prefix /guide
+        seed_path_prefix = parsed_seed.path.rstrip("/") or "/"
 
         rp = await _fetch_robots(f"{base_scheme}://{base_netloc}/robots.txt")
 
@@ -129,6 +138,11 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
                 parsed = urlparse(current_url)
                 if parsed.netloc != base_netloc:
                     continue
+                # Only crawl pages at or below the seed path
+                if seed_path_prefix != "/":
+                    p_path = parsed.path
+                    if p_path != seed_path_prefix and not p_path.startswith(seed_path_prefix + "/"):
+                        continue
                 if not rp.can_fetch(_USER_AGENT, current_url):
                     continue
 
@@ -160,11 +174,11 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
                     for href in extractor.links:
                         abs_url = urljoin(current_url, href).split("#")[0]
                         p = urlparse(abs_url)
-                        if (
-                            p.scheme in ("http", "https")
-                            and p.netloc == base_netloc
-                            and abs_url not in visited
-                        ):
+                        if not (p.scheme in ("http", "https") and p.netloc == base_netloc):
+                            continue
+                        if seed_path_prefix != "/" and p.path != seed_path_prefix and not p.path.startswith(seed_path_prefix + "/"):
+                            continue
+                        if abs_url not in visited:
                             queue.append(abs_url)
 
         await jobs_store.update_job_status(
