@@ -60,6 +60,8 @@ async def lemonsqueezy_webhook(
         result = await provisioning.provision_from_order(ls_order_id, email, name, variant_id)
         logger.info("Provisioned tenant %s for %s", result["tenant_id"], email)
     except Exception as exc:
+        # If provisioning fails after claiming the ls_orders slot, LS will retry
+        # but the idempotency check above will catch it — no duplicate tenants.
         logger.exception("Provisioning failed for order %s: %s", ls_order_id, exc)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Provisioning failed")
 

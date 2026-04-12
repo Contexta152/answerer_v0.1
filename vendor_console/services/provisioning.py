@@ -81,13 +81,17 @@ async def provision_from_order(
     plan = _variant_to_plan(variant_id)
     quota = _plan_to_quota(plan)
 
+    # Claim the order slot FIRST — the PK constraint makes this atomic.
+    # If a concurrent or retry call reaches here simultaneously, one will
+    # raise UniqueViolationError and stop before creating any tenant.
+    await postgres.insert_ls_order(ls_order_id, tenant_id, email, name, variant_id, plan)
+
     answerer_result, admin_result = await asyncio.gather(
         _create_answerer_tenant(tenant_id, name),
         _create_admin_user(tenant_id, email, name),
     )
 
     await _push_quota(tenant_id, quota, plan)
-    await postgres.insert_ls_order(ls_order_id, tenant_id, email, name, variant_id, plan)
 
     # TODO: replace with real transactional email
     print(f"[EMAIL STUB] tenant_id={tenant_id} email={email} temp_password={admin_result['temp_password']}", flush=True)
