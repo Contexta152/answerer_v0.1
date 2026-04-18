@@ -111,6 +111,29 @@ async def create_tables() -> None:
         await conn.execute(
             "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS name TEXT"
         )
+        await conn.execute(
+            "ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS demo_questions TEXT[] DEFAULT '{}'"
+        )
+
+
+async def get_demo_questions(tenant_id: UUID) -> list[str]:
+    pool = await _get_pool()
+    row = await pool.fetchrow(
+        "SELECT demo_questions FROM tenant_settings WHERE tenant_id = $1",
+        tenant_id,
+    )
+    if not row:
+        return []
+    return list(row["demo_questions"] or [])
+
+
+async def set_demo_questions(tenant_id: UUID, questions: list[str]) -> None:
+    pool = await _get_pool()
+    await pool.execute(
+        "UPDATE tenant_settings SET demo_questions = $1 WHERE tenant_id = $2",
+        questions,
+        tenant_id,
+    )
 
 
 async def get_tenant(tenant_id: UUID) -> Optional[dict]:

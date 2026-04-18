@@ -49,6 +49,9 @@
       <button class="nav-item" data-tab="guardrails"><span class="nav-icon">🛡</span> Guardrails</button>
       <button class="nav-item" data-tab="curated"><span class="nav-icon">✦</span> Curated Answers</button>
 
+      <div class="nav-group-label">Widget</div>
+      <button class="nav-item" data-tab="demoquestions"><span class="nav-icon">💬</span> Demo Questions</button>
+
       <div class="nav-group-label">Testing</div>
       <button class="nav-item" data-tab="testquery"><span class="nav-icon">⊕</span> Test Query</button>
 
@@ -350,6 +353,41 @@
       </div>
     </div>
 
+    <!-- DEMO QUESTIONS ───────────────────────────────────────────────────── -->
+    <div id="tab-demoquestions" class="tab-panel">
+      <div class="page-header">
+        <h1>Demo Questions</h1>
+        <p>Up to 5 example questions shown in the widget to help users get started.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Example Questions</div>
+        <div class="form-group">
+          <label for="dq-q1">Question 1</label>
+          <input type="text" id="dq-q1" placeholder="e.g. How do I reset my password?">
+        </div>
+        <div class="form-group">
+          <label for="dq-q2">Question 2</label>
+          <input type="text" id="dq-q2" placeholder="">
+        </div>
+        <div class="form-group">
+          <label for="dq-q3">Question 3</label>
+          <input type="text" id="dq-q3" placeholder="">
+        </div>
+        <div class="form-group">
+          <label for="dq-q4">Question 4</label>
+          <input type="text" id="dq-q4" placeholder="">
+        </div>
+        <div class="form-group">
+          <label for="dq-q5">Question 5</label>
+          <input type="text" id="dq-q5" placeholder="">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="dq-save-btn">Save</button>
+          <span id="dq-msg"></span>
+        </div>
+      </div>
+    </div>
+
     <!-- TEST QUERY ───────────────────────────────────────────────────────── -->
     <div id="tab-testquery" class="tab-panel">
       <div class="page-header">
@@ -426,8 +464,11 @@ function authHeaders() {
 
 async function api(url, opts = {}) {
   const res = await fetch(url, {headers: authHeaders(), ...opts});
-  // Only auto-logout on 401 from the admin console itself, not from the answerer service
-  if (res.status === 401 && !url.startsWith(ANSWERER_URL)) { logout(); throw new Error('Unauthorised'); }
+  if (res.status === 401) {
+    logout();
+    document.getElementById('login-error').textContent = 'Session expired — please sign in again.';
+    throw new Error('Session expired');
+  }
   return res;
 }
 
@@ -546,6 +587,10 @@ document.getElementById('logout-btn').addEventListener('click', logout);
 
 // ── Period pills ──────────────────────────────────────────────────────────────
 
+function toLocalInputValue(d) {
+  return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 function applyPeriodPill(pillsId, fromId, toId, customRangeId, days, callback) {
   document.querySelectorAll(`#${pillsId} .period-pill`).forEach(b => b.classList.remove('active'));
   const activePill = document.querySelector(`#${pillsId} [data-days="${days}"]`);
@@ -554,8 +599,8 @@ function applyPeriodPill(pillsId, fromId, toId, customRangeId, days, callback) {
   if (days === 'custom') { customRange.style.display = 'block'; return; }
   customRange.style.display = 'none';
   const now = new Date();
-  document.getElementById(toId).value   = now.toISOString().slice(0, 16);
-  document.getElementById(fromId).value = new Date(now - days * 86400000).toISOString().slice(0, 16);
+  document.getElementById(toId).value   = toLocalInputValue(now);
+  document.getElementById(fromId).value = toLocalInputValue(new Date(now - days * 86400000));
   if (callback) callback();
 }
 
@@ -574,10 +619,11 @@ document.getElementById('an-pills').addEventListener('click', e => {
 });
 
 const tabLoaders = {
-  settings:   loadSettings,
-  kbs:        loadKBs,
-  guardrails: loadGuardrails,
-  curated:    loadCurated,
+  settings:     loadSettings,
+  kbs:          loadKBs,
+  guardrails:   loadGuardrails,
+  curated:      loadCurated,
+  demoquestions: loadDemoQuestions,
   qlog:       () => applyPeriodPill('qlog-pills', 'qlog-from', 'qlog-to', 'qlog-custom-range', 7, () => loadQlog(0)),
   analytics:  () => applyPeriodPill('an-pills', 'an-from', 'an-to', 'an-custom-range', 7, loadAnalytics),
 };
@@ -610,12 +656,12 @@ async function loadWidgetKey() {
   try {
     const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/widget-key`);
     const d   = await res.json();
-    if (!res.ok) { el.style.filter = ''; el.textContent = `Error: ${d.detail || JSON.stringify(d)}`; return; }
+    if (!res.ok) { el.classList.remove('blur-reveal'); el.textContent = `Error: ${d.detail || JSON.stringify(d)}`; return; }
     widgetKey = d.widget_api_key;
     el.textContent = d.widget_api_key;
-    el.style.filter = 'blur(4px)';
-    el.onclick = () => { el.style.filter = el.style.filter ? '' : 'blur(4px)'; };
-  } catch(e) { el.style.filter = ''; el.textContent = `Error: ${e.message}`; }
+    el.classList.add('blur-reveal');
+    el.onclick = () => { el.classList.toggle('blur-reveal'); };
+  } catch(e) { el.classList.remove('blur-reveal'); el.textContent = `Error: ${e.message}`; }
 }
 
 async function loadQuota() {
@@ -656,7 +702,7 @@ async function loadUsage() {
       : '<span class="badge badge-green">Active</span>';
     document.getElementById('suspend-btn').style.display   = d.suspended ? 'none' : 'inline-flex';
     document.getElementById('reinstate-btn').style.display = d.suspended ? 'inline-flex' : 'none';
-  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load usage.'; } }
+  } catch(e) { if (e.message !== 'Session expired') { el.className = 'msg-err'; el.textContent = 'Failed to load usage.'; } }
 }
 
 document.getElementById('suspend-btn').addEventListener('click', async () => {
@@ -723,7 +769,7 @@ async function loadSettings() {
       <span id="settings-msg" style="margin-left:12px"></span>`;
     wireRangeInputs(el);
     document.getElementById('settings-save-btn').addEventListener('click', saveSettings);
-  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load settings.'; } }
+  } catch(e) { if (e.message !== 'Session expired') { el.className = 'msg-err'; el.textContent = 'Failed to load settings.'; } }
 }
 
 // ── KnowledgeBases ───────────────────────────────────────────────────────────
@@ -783,7 +829,7 @@ async function loadKBs() {
           <div id="kb-msg-${esc(kb.job_id)}" class="kb-msg"></div>
         </div>`;
       }).join('');
-  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load knowledgebases.'; } }
+  } catch(e) { if (e.message !== 'Session expired') { el.className = 'msg-err'; el.textContent = 'Failed to load knowledgebases.'; } }
 }
 
 document.getElementById('main-content').addEventListener('click', async e => {
@@ -928,7 +974,7 @@ async function loadGuardrails() {
     if (!res.ok) { el.className = 'msg-err'; el.textContent = `Error: ${d.message||JSON.stringify(d)}`; return; }
     guardrails = d.items || [];
     renderGuardrails();
-  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load guardrails.'; } }
+  } catch(e) { if (e.message !== 'Session expired') { el.className = 'msg-err'; el.textContent = 'Failed to load guardrails.'; } }
 }
 
 function renderGuardrails() {
@@ -1092,7 +1138,7 @@ async function loadCurated() {
     if (!res.ok) { el.className = 'msg-err'; el.textContent = `Error: ${d.message||JSON.stringify(d)}`; return; }
     curatedAnswers = d.items || [];
     renderCurated();
-  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load curated answers.'; } }
+  } catch(e) { if (e.message !== 'Session expired') { el.className = 'msg-err'; el.textContent = 'Failed to load curated answers.'; } }
 }
 
 function renderCurated() {
@@ -1268,7 +1314,7 @@ async function loadQlog(offset) {
       const idx = parseInt(row.dataset.idx);
       showQlogDetail(idx, row);
     });
-  } catch(e) { if (e.message !== 'Unauthorised') el.innerHTML = '<div class="msg-err">Failed to load question log.</div>'; }
+  } catch(e) { if (e.message !== 'Session expired') el.innerHTML = '<div class="msg-err">Failed to load question log.</div>'; }
 }
 
 function showQlogDetail(idx, row) {
@@ -1373,7 +1419,7 @@ async function loadAnalytics() {
         <summary>Raw JSON</summary>
         <pre class="raw-json">${JSON.stringify(d, null, 2)}</pre>
       </details>`;
-  } catch(e) { if (e.message !== 'Unauthorised') el.innerHTML = '<div class="msg-err">Failed to load analytics.</div>'; }
+  } catch(e) { if (e.message !== 'Session expired') el.innerHTML = '<div class="msg-err">Failed to load analytics.</div>'; }
 }
 
 document.getElementById('an-load-btn').addEventListener('click', loadAnalytics);
@@ -1421,7 +1467,7 @@ document.getElementById('job-check-btn').addEventListener('click', async () => {
         ${d.error ? `<div class="data-row"><span class="data-label">Error</span><span class="data-value msg-err">${esc(d.error)}</span></div>` : ''}
         ${d.progress ? renderJobProgress(d.progress) : ''}
       </div>`;
-  } catch(e) { if (e.message !== 'Unauthorised') el.innerHTML = '<div class="msg-err">Network error.</div>'; }
+  } catch(e) { if (e.message !== 'Session expired') el.innerHTML = '<div class="msg-err">Network error.</div>'; }
 });
 
 document.getElementById('job-stop-btn').addEventListener('click', async () => {
@@ -1523,6 +1569,40 @@ document.getElementById('tq-llm-btn').addEventListener('click', async () => {
     document.getElementById('tq-answer-card').style.display = '';
   } catch(e) { msgEl.className = 'msg-err'; msgEl.textContent = `Network error: ${e.message}`; }
   finally { btn.disabled = false; btn.textContent = 'Submit to LLM for full answer'; }
+});
+
+// ── Demo Questions ────────────────────────────────────────────────────────────
+
+async function loadDemoQuestions() {
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/demo-questions`);
+    const d = await res.json();
+    if (!res.ok) return;
+    const qs = d.questions || [];
+    for (let i = 1; i <= 5; i++) {
+      document.getElementById(`dq-q${i}`).value = qs[i - 1] || '';
+    }
+  } catch(e) { /* silently ignore on load */ }
+}
+
+document.getElementById('dq-save-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('dq-save-btn');
+  const questions = [];
+  for (let i = 1; i <= 5; i++) {
+    const v = document.getElementById(`dq-q${i}`).value.trim();
+    if (v) questions.push(v);
+  }
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/demo-questions`, {
+      method: 'PUT',
+      body: JSON.stringify({questions}),
+    });
+    const d = await res.json();
+    if (!res.ok) { setMsg('dq-msg', d.message || d.detail || 'Save failed', false); return; }
+    setMsg('dq-msg', 'Saved', true);
+  } catch(e) { setMsg('dq-msg', `Network error: ${e.message}`, false); }
+  finally { btn.disabled = false; btn.textContent = 'Save'; }
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

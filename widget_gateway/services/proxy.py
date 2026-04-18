@@ -16,6 +16,11 @@ async def ask(tenant_id: str, question: str, widget_key: str) -> tuple[int, dict
     return resp.status_code, resp.json()
 
 
+async def get_demo_questions(tenant_id: str) -> tuple[int, dict]:
+    resp = await _client.get(f"/v1/public/tenants/{tenant_id}/demo-questions")
+    return resp.status_code, resp.json()
+
+
 async def ask_stream(tenant_id: str, question: str, widget_key: str) -> tuple[int, bytes | None, AsyncIterator[bytes] | None]:
     req = _client.build_request(
         "POST",

@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import analytics, ask, crawl, curated, guardrails, index, qlog, search, tenants
+from routers import analytics, ask, crawl, curated, demo_questions, guardrails, index, qlog, search, tenants
 from storage.postgres import create_tables
 
 
@@ -23,6 +23,7 @@ app.add_middleware(
 )
 
 app.include_router(tenants.router)
+app.include_router(demo_questions.router)
 app.include_router(crawl.router)
 app.include_router(index.router)
 app.include_router(guardrails.router)

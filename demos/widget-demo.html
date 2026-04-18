@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Widget Embed Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #f5f7fa;
+      color: #1a1a2e;
+      min-height: 100vh;
+      padding-bottom: 160px; /* room for widget */
+    }
+
+    /* Simulated customer page header */
+    .site-header {
+      background: #1e293b;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .site-header .logo {
+      width: 36px; height: 36px;
+      background: #3b82f6;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: .9rem; color: #fff;
+    }
+    .site-header .name {
+      font-size: .95rem; font-weight: 600; color: #fff;
+    }
+    nav { margin-left: auto; display: flex; gap: 24px; }
+    nav a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .875rem; }
+    nav a:hover { color: #fff; }
+
+    .hero {
+      max-width: 760px;
+      margin: 64px auto 0;
+      padding: 0 24px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      color: #0f172a;
+      line-height: 1.2;
+      margin-bottom: 16px;
+    }
+    .hero p {
+      font-size: 1.05rem;
+      color: #64748b;
+      line-height: 1.6;
+      max-width: 560px;
+      margin: 0 auto 32px;
+    }
+    .hero-btn {
+      display: inline-block;
+      padding: 13px 32px;
+      background: #3b82f6;
+      color: #fff;
+      border-radius: 8px;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: .95rem;
+    }
+
+    .content {
+      max-width: 760px;
+      margin: 64px auto;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .card h2 { font-size: 1rem; font-weight: 700; margin-bottom: 8px; color: #0f172a; }
+    .card p  { font-size: .875rem; color: #64748b; line-height: 1.55; }
+
+    /* Embed snippet box — shown so developers can copy it */
+    .snippet-box {
+      max-width: 760px;
+      margin: 0 auto 48px;
+      padding: 0 24px;
+    }
+    .snippet-box h2 {
+      font-size: .8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: #94a3b8;
+      margin-bottom: 10px;
+    }
+    .snippet-box pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: .8rem;
+      line-height: 1.7;
+      padding: 16px 20px;
+      border-radius: 10px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .snippet-box .hl { color: #7dd3fc; }
+    .snippet-box .attr { color: #86efac; }
+    .snippet-box .val  { color: #fca5a5; }
+  </style>
+</head>
+<body>
+
+<!-- Simulated customer website -->
+<header class="site-header">
+  <div class="logo">A</div>
+  <span class="name">Acme Support</span>
+  <nav>
+    <a href="#">Home</a>
+    <a href="#">Docs</a>
+    <a href="#">Pricing</a>
+    <a href="#">Contact</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <h1>Fast answers from your knowledge base</h1>
+  <p>This page demonstrates the Grounded Answers embeddable widget. The chat button sits at the bottom of the page — try it out.</p>
+  <a class="hero-btn" href="#">Get started</a>
+</div>
+
+<div class="content">
+  <div class="card">
+    <h2>Always-on support</h2>
+    <p>The widget is available on every page of your site. Users get instant answers sourced directly from your content without leaving the page.</p>
+  </div>
+  <div class="card">
+    <h2>One script tag</h2>
+    <p>Drop a single &lt;script&gt; tag before &lt;/body&gt;. No build step, no npm install, no backend changes needed.</p>
+  </div>
+  <div class="card">
+    <h2>Streaming answers</h2>
+    <p>Responses stream word-by-word so users see the answer forming in real time — no waiting for the full response.</p>
+  </div>
+  <div class="card">
+    <h2>Source citations</h2>
+    <p>Every answer links back to the source pages in your knowledge base, so users can verify and explore further.</p>
+  </div>
+</div>
+
+<div class="snippet-box">
+  <h2>Embed snippet</h2>
+  <pre><span class="hl">&lt;script</span>
+  <span class="attr">src</span>=<span class="val">"https://widget-gateway-848760828618.us-central1.run.app/widget.js"</span>
+  <span class="attr">data-tenant-id</span>=<span class="val">"YOUR-TENANT-UUID"</span>
+  <span class="attr">data-widget-key</span>=<span class="val">"YOUR-WIDGET-KEY"</span>
+  <span class="attr">data-accent-color</span>=<span class="val">"#3b82f6"</span>
+  <span class="attr">data-label</span>=<span class="val">"Ask Acme Support"</span>
+  <span class="attr">data-placeholder</span>=<span class="val">"Ask anything about our products…"</span><span class="hl">&gt;&lt;/script&gt;</span></pre>
+</div>
+
+<!--
+  ═══════════════════════════════════════════════════════════
+  WIDGET EMBED — fill in your tenant-id and widget-key below
+  ═══════════════════════════════════════════════════════════
+-->
+<script
+  src="http://localhost:8001/widget.js"
+  data-tenant-id="REPLACE-WITH-TENANT-ID"
+  data-widget-key="REPLACE-WITH-WIDGET-KEY"
+  data-accent-color="#3b82f6"
+  data-label="Ask Acme Support"
+  data-placeholder="Ask anything about our products…">
+</script>
+
+</body>
+</html>

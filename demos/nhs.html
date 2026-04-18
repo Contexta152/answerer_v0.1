@@ -359,18 +359,12 @@
     <p>Select a question below or type your own. The AI will answer using only verified NHS source material.</p>
   </div>
 
-  <div class="pill-label">Suggested questions</div>
-  <div class="pills">
-    <button class="pill" data-q="How do I register with an NHS GP?">How do I register with an NHS GP?</button>
-    <button class="pill" data-q="What are the symptoms of a stroke and when should I call 999?">What are the symptoms of a stroke and when should I call 999?</button>
-    <button class="pill" data-q="How do I get a repeat prescription from my GP?">How do I get a repeat prescription from my GP?</button>
-    <button class="pill" data-q="When should I go to A&amp;E instead of calling NHS 111?">When should I go to A&amp;E instead of calling NHS 111?</button>
-    <button class="pill" data-q="What mental health support is available on the NHS?">What mental health support is available on the NHS?</button>
-  </div>
+  <div class="pill-label" id="pills-label" style="display:none">Suggested questions</div>
+  <div class="pills" id="pills-container"></div>
 
   <div class="ask-card">
     <label for="question-input">Your question</label>
-    <textarea id="question-input" placeholder="Select a question above or type your own…"></textarea>
+    <textarea id="question-input" placeholder="Type your question here…"></textarea>
     <div class="ask-footer">
       <button class="btn-ask" id="ask-btn">Ask AI</button>
     </div>
@@ -415,6 +409,8 @@
 const TENANT_ID  = 'ed8fe501-86dc-443a-bc53-7e8f48db82c3';
 const WIDGET_KEY = '';  // set via NHS_DEMO_WIDGET_KEY env var at deploy time
 const GATEWAY    = 'https://widget-gateway-848760828618.us-central1.run.app';
+const TYPEWRITER_CHAR_MS = 40;
+const TYPEWRITER_PAUSE_MS = 2500;
 
 const questionEl    = document.getElementById('question-input');
 const askBtn        = document.getElementById('ask-btn');
@@ -427,13 +423,16 @@ const sourcesSection = document.getElementById('sources-section');
 const sourcesList   = document.getElementById('sources-list');
 
 // ── Pill selection ──────────────────────────────────────────────────────────
-document.querySelectorAll('.pill').forEach(pill => {
-  pill.addEventListener('click', () => {
-    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
-    pill.classList.add('active');
-    questionEl.value = pill.dataset.q;
+function bindPills() {
+  document.querySelectorAll('.pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      stopTypewriter();
+      document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      questionEl.value = pill.dataset.q;
+    });
   });
-});
+}
 
 questionEl.addEventListener('input', () => {
   const val = questionEl.value.trim();
@@ -441,6 +440,89 @@ questionEl.addEventListener('input', () => {
     pill.classList.toggle('active', pill.dataset.q === val);
   });
 });
+
+// ── Typewriter animation ────────────────────────────────────────────────────
+let _twTimer = null;
+let _twActive = false;
+
+function stopTypewriter() {
+  _twActive = false;
+  clearTimeout(_twTimer);
+  questionEl.placeholder = 'Type your question here…';
+}
+
+function startTypewriter(questions) {
+  if (!questions.length) return;
+  _twActive = true;
+  let qi = 0;
+
+  function typeQuestion() {
+    if (!_twActive) return;
+    const q = questions[qi % questions.length];
+    qi++;
+    let ci = 0;
+    questionEl.placeholder = '';
+
+    function typeChar() {
+      if (!_twActive) return;
+      if (ci < q.length) {
+        questionEl.placeholder += q[ci++];
+        _twTimer = setTimeout(typeChar, TYPEWRITER_CHAR_MS);
+      } else {
+        _twTimer = setTimeout(() => {
+          if (!_twActive) return;
+          eraseQuestion(q, typeQuestion);
+        }, TYPEWRITER_PAUSE_MS);
+      }
+    }
+    typeChar();
+  }
+
+  function eraseQuestion(text, done) {
+    let ci = text.length;
+    function eraseChar() {
+      if (!_twActive) return;
+      if (ci > 0) {
+        questionEl.placeholder = text.slice(0, --ci);
+        _twTimer = setTimeout(eraseChar, TYPEWRITER_CHAR_MS / 2);
+      } else {
+        _twTimer = setTimeout(done, 300);
+      }
+    }
+    eraseChar();
+  }
+
+  typeQuestion();
+}
+
+// Stop typewriter when user starts typing
+questionEl.addEventListener('focus', stopTypewriter);
+
+// ── Load demo questions ─────────────────────────────────────────────────────
+async function loadDemoQuestions() {
+  try {
+    const res = await fetch(`${GATEWAY}/v1/demo-questions/${TENANT_ID}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const qs = (data.questions || []).filter(q => q.trim());
+    if (!qs.length) return;
+
+    const container = document.getElementById('pills-container');
+    container.innerHTML = '';
+    qs.forEach(q => {
+      const btn = document.createElement('button');
+      btn.className = 'pill';
+      btn.dataset.q = q;
+      btn.textContent = q;
+      container.appendChild(btn);
+    });
+    document.getElementById('pills-label').style.display = '';
+    bindPills();
+    startTypewriter(qs);
+  } catch(_) {}
+}
+
+loadDemoQuestions();
 
 // ── Modal helpers ───────────────────────────────────────────────────────────
 function openModal(question) {
