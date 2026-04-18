@@ -39,6 +39,7 @@ def _row_to_entry(row: dict) -> QuestionLogEntry:
         t = row["timing"]
         timing = Timing(
             curated_check_ms=t.get("curated_check_ms"),
+            guardrail_check_ms=t.get("guardrail_check_ms"),
             embed_ms=t.get("embed_ms"),
             vector_search_ms=t.get("vector_search_ms"),
             llm_ms=t.get("llm_ms"),
@@ -68,6 +69,7 @@ def _row_to_entry(row: dict) -> QuestionLogEntry:
         guardrail_name=row.get("guardrail_name"),
         chunks=chunks,
         prompt_tokens=row.get("prompt_tokens"),
+        embed_tokens=row.get("embed_tokens"),
         error=row.get("error"),
         timing=timing,
     )

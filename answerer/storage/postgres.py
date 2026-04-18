@@ -743,7 +743,7 @@ async def query_question_log(
         if not has_timing:
             for col in timing_cols:
                 r.pop(col, None)
-        r["chunks"] = r["chunks"] or []
+        r["chunks"] = json.loads(r["chunks"]) if r["chunks"] else []
         items.append(r)
 
     return {"items": items, "total": total}
