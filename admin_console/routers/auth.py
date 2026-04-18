@@ -60,6 +60,11 @@ class _CreateUserBody(BaseModel):
     name: Optional[str] = None
 
 
+@router.delete("/v1/internal/tenants/{tenant_id}", status_code=204)
+async def delete_tenant(_: None = Depends(require_vendor_service_key), tenant_id: UUID = None):
+    await postgres.delete_tenant_data(tenant_id)
+
+
 @router.post("/v1/internal/users", status_code=201)
 async def create_user(_: None = Depends(require_vendor_service_key), body: _CreateUserBody = None):
     existing = await postgres.get_user_by_email(body.email)

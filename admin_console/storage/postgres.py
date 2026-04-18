@@ -118,6 +118,13 @@ async def get_quota(tenant_id: UUID) -> Optional[dict]:
     return dict(row) if row else None
 
 
+async def delete_tenant_data(tenant_id: UUID) -> None:
+    """Delete all admin-console data for a tenant: users (cascades tokens) and quota."""
+    pool = await _get_pool()
+    await pool.execute("DELETE FROM admin_users WHERE tenant_id = $1", tenant_id)
+    await pool.execute("DELETE FROM quotas WHERE tenant_id = $1", tenant_id)
+
+
 async def upsert_quota(tenant_id: UUID, questions_quota: int) -> dict:
     pool = await _get_pool()
     now = datetime.now(timezone.utc)

@@ -108,6 +108,9 @@ async def create_tables() -> None:
         await conn.execute(
             "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS url TEXT"
         )
+        await conn.execute(
+            "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS name TEXT"
+        )
 
 
 async def get_tenant(tenant_id: UUID) -> Optional[dict]:
@@ -124,7 +127,7 @@ async def get_crawl_jobs(tenant_id: UUID) -> list[dict]:
     # Fetch crawl jobs
     crawl_rows = await pool.fetch(
         """
-        SELECT job_id, status, created, started, completed, error, progress, url
+        SELECT job_id, status, created, started, completed, error, progress, url, name
         FROM jobs
         WHERE tenant_id = $1 AND job_type = 'crawl'
         ORDER BY created DESC
@@ -134,10 +137,11 @@ async def get_crawl_jobs(tenant_id: UUID) -> list[dict]:
     if not crawl_rows:
         return []
 
-    # Fetch the latest completed index job for each crawl job (url stores crawl_job_id)
+    # Fetch latest index job per crawl job (url stores crawl_job_id as string)
     index_rows = await pool.fetch(
         """
-        SELECT DISTINCT ON (url) url, progress
+        SELECT DISTINCT ON (url) url, job_id AS index_job_id, status AS index_status,
+               completed AS index_completed, progress AS index_progress
         FROM jobs
         WHERE tenant_id = $1
           AND job_type = 'index'
@@ -146,22 +150,52 @@ async def get_crawl_jobs(tenant_id: UUID) -> list[dict]:
         """,
         tenant_id,
     )
-    # Build lookup: crawl_job_id_str -> embed_tokens
-    embed_tokens_by_crawl: dict[str, int | None] = {}
+    # Build lookup: crawl_job_id_str -> index info
+    index_by_crawl: dict[str, dict] = {}
     for ir in index_rows:
-        p = ir["progress"]
-        if p is not None:
-            if isinstance(p, str):
-                p = json.loads(p)
-            embed_tokens_by_crawl[ir["url"]] = p.get("embed_tokens")
+        p = ir["index_progress"]
+        if p is not None and isinstance(p, str):
+            p = json.loads(p)
+        index_by_crawl[ir["url"]] = {
+            "index_job_id": ir["index_job_id"],
+            "index_status": ir["index_status"],
+            "index_completed": ir["index_completed"],
+            "embed_tokens": p.get("embed_tokens") if p else None,
+            "pages_indexed": p.get("pages_indexed") if p else None,
+        }
 
     result = []
     for row in crawl_rows:
         d = dict(row)
         crawl_id_str = str(d["job_id"])
-        d["embed_tokens"] = embed_tokens_by_crawl.get(crawl_id_str)
+        idx = index_by_crawl.get(crawl_id_str, {})
+        d["embed_tokens"] = idx.get("embed_tokens")
+        d["pages_indexed"] = idx.get("pages_indexed")
+        d["index_job_id"] = idx.get("index_job_id")
+        d["index_status"] = idx.get("index_status")
+        d["index_completed"] = idx.get("index_completed")
+        d["name"] = d.get("name")
         result.append(d)
     return result
+
+
+async def delete_crawl_job(tenant_id: UUID, crawl_job_id: UUID) -> None:
+    """Delete a crawl job and its associated index jobs. crawl_pages cascade-delete with the job."""
+    pool = await _get_pool()
+    crawl_id_str = str(crawl_job_id)
+    async with pool.acquire() as conn:
+        # Delete index jobs that reference this crawl
+        await conn.execute(
+            "DELETE FROM jobs WHERE tenant_id = $1 AND job_type = 'index' AND url = $2",
+            tenant_id,
+            crawl_id_str,
+        )
+        # Delete the crawl job itself (crawl_pages cascade via FK)
+        await conn.execute(
+            "DELETE FROM jobs WHERE tenant_id = $1 AND job_id = $2 AND job_type = 'crawl'",
+            tenant_id,
+            crawl_job_id,
+        )
 
 
 async def count_active_crawl_jobs(tenant_id: UUID) -> int:
@@ -203,6 +237,8 @@ async def insert_tenant(tenant_id: UUID, name: str, widget_api_key: str) -> dict
 
 async def delete_tenant(tenant_id: UUID) -> bool:
     pool = await _get_pool()
+    # question_log has no FK constraint so must be cleaned up explicitly
+    await pool.execute("DELETE FROM question_log WHERE tenant_id = $1", tenant_id)
     result = await pool.execute("DELETE FROM tenants WHERE id = $1", tenant_id)
     return result == "DELETE 1"
 

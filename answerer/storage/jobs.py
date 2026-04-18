@@ -34,10 +34,11 @@ def _row_to_job(row) -> Job:
         error=row["error"],
         progress=progress,
         url=row["url"] if "url" in row.keys() else None,
+        name=row["name"] if "name" in row.keys() else None,
     )
 
 
-async def create_job(tenant_id: UUID, job_type: str, url: str | None = None) -> Job:
+async def create_job(tenant_id: UUID, job_type: str, url: str | None = None, name: str | None = None) -> Job:
     """Insert a new job record with status 'pending' and return it."""
     pool = await get_pool()
     job_id = uuid4()
@@ -45,15 +46,16 @@ async def create_job(tenant_id: UUID, job_type: str, url: str | None = None) -> 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO jobs (job_id, tenant_id, job_type, status, created, url)
-            VALUES ($1, $2, $3, 'pending', $4, $5)
-            RETURNING job_id, status, created, started, completed, error, progress, url
+            INSERT INTO jobs (job_id, tenant_id, job_type, status, created, url, name)
+            VALUES ($1, $2, $3, 'pending', $4, $5, $6)
+            RETURNING job_id, status, created, started, completed, error, progress, url, name
             """,
             job_id,
             tenant_id,
             job_type,
             now,
             url,
+            name,
         )
     return _row_to_job(row)
 
@@ -64,7 +66,7 @@ async def get_job(tenant_id: UUID, job_id: UUID) -> Optional[Job]:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT job_id, status, created, started, completed, error, progress, url
+            SELECT job_id, status, created, started, completed, error, progress, url, name
             FROM jobs
             WHERE job_id = $1 AND tenant_id = $2
             """,

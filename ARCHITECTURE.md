@@ -106,7 +106,7 @@ Keep the layers clean or parallel builds break.
 
 ### HTTP Layer (`routers/`)
 - One file per domain: `tenants.py`, `crawl.py`, `index.py`, `guardrails.py`,
-  `curated.py`, `qlog.py`, `analytics.py`, `ask.py`
+  `curated.py`, `qlog.py`, `analytics.py`, `ask.py`, `search.py`
 - Registers with FastAPI via `app.include_router()`
 - Handles: path params, request body parsing, auth dependency injection,
   response serialisation
@@ -216,9 +216,35 @@ POST /v1/tenants/{id}/index (crawl_job_id)
    b. Chunk text (chunk_size, chunk_overlap from tenant Settings)
    c. Embed chunks via Vertex AI
    d. Upsert vectors into Qdrant tenant collection
+      — each vector payload includes: {source, text, crawl_job_id}
    e. Update job progress
    f. On completion: status → completed
 ```
+
+### Knowledge Base Delete
+
+`DELETE /v1/tenants/{id}/crawl/{job_id}` performs a full KB removal:
+
+1. Stop the crawl job if still running
+2. Delete Qdrant vectors where `payload.crawl_job_id = job_id` (filter-based delete)
+3. Delete all associated index job records from Postgres
+4. Delete the crawl job record — crawl pages cascade-delete via FK
+
+The `crawl_job_id` field in the Qdrant payload is the linchpin: it allows selective
+vector deletion without dropping the entire tenant collection.
+
+### Knowledge Base Update (re-crawl)
+
+The admin console handles the full swap client-side — no dedicated endpoint needed:
+
+1. Start a new crawl for the same URL
+2. Poll until the new crawl completes
+3. DELETE the old crawl job (removes old Qdrant vectors and records)
+4. Start a new index job against the new crawl
+5. Poll until indexing completes
+
+The old vectors are removed before new ones are indexed, so the knowledge base is
+briefly unavailable to the RAG pipeline during the swap window.
 
 ---
 
@@ -296,6 +322,50 @@ All instances share the same Qdrant VM, so vector searches are consistent across
 
 ---
 
+## Admin Console
+
+Single-page FastAPI app (`admin_console/`) that serves a static HTML/JS UI. All
+data calls go directly from the browser to the Answerer service using the admin JWT
+obtained at login, or to the Admin Console's own API for quota.
+
+### Pages
+
+| Tab | Key actions |
+|---|---|
+| Overview | View tenant ID / widget key / quota / usage; suspend or reinstate tenant |
+| Settings | Edit pipeline parameters: top-k, score threshold, curated threshold, max question chars |
+| Knowledge Bases | Create KB (crawl + index); Update KB (re-crawl + replace vectors); Delete KB (remove vectors + records) |
+| Guardrails | Add / edit / delete / enable guardrails with threshold sliders |
+| Curated Answers | Add / edit / delete exact-match Q&A pairs |
+| Test Query | Submit a question, inspect raw retrieved snippets with score badges, filter by threshold slider, submit to LLM for full answer |
+| Question Log | Paginated question history with timing columns and per-row chunk detail |
+| Analytics | Aggregated stats (questions, avg response time, tokens) for a date range |
+| Jobs | Check or stop a crawl or index job by ID |
+
+### Test Query flow
+
+```
+Admin enters question
+        │
+        ▼
+POST /v1/tenants/{id}/search  (admin JWT)
+        — embed question, search KB chunks only (no guardrails/curated)
+        — returns all hits with scores, no threshold applied
+        │
+        ▼
+UI renders snippet cards; threshold slider dims snippets below value (live)
+        │
+        ▼  [optional]
+POST /v1/tenants/{id}/ask  (widget key)
+        — full pipeline: guardrail → curated → RAG → LLM
+        — answer displayed in page
+```
+
+`/v1/tenants/{id}/search` is admin-only (admin JWT). It exists solely to support the
+Test Query page and is never called by the widget.
+
+---
+
 ## Project File Structure
 
 ```
@@ -308,7 +378,7 @@ answerer_v0.1/
     payment-events.yaml
   stubs/                          # Stub servers (Prism)
     answerer/Dockerfile
-  answerer/                       # Production service (to be built)
+  answerer/                       # Core RAG service
     main.py                       # FastAPI app, router registration
     auth.py                       # Auth middleware (3 contexts)
     models.py                     # Pydantic models from spec schemas
@@ -321,6 +391,7 @@ answerer_v0.1/
       qlog.py
       analytics.py
       ask.py
+      search.py                   # Admin-only snippet search (Test Query)
     services/                     # Service layer
       tenants.py
       crawl.py
@@ -330,14 +401,33 @@ answerer_v0.1/
       qlog.py
       analytics.py
       ask.py
+      embed.py
     storage/                      # Storage layer
       qdrant.py
       postgres.py
       jobs.py
     Dockerfile
     requirements.txt
+  admin_console/                  # Per-tenant admin UI
+    main.py                       # FastAPI app (serves static HTML)
+    auth.py
+    models.py
+    routers/
+      auth.py
+      quota.py
+    services/
+      auth.py
+      quota.py
+    storage/
+      postgres.py
+    static/
+      index.html                  # Single-page app
+      style.css
+    Dockerfile
+    requirements.txt
+  vendor_console/                 # Super-admin UI
+  widget_gateway/                 # Public widget endpoint
   docker-compose.stubs.yml        # Stub server compose
-  docker-compose.yml              # Production compose (to be built)
   stubs.sh                        # ./stubs.sh to start stub servers
   .spectral.yaml                  # Linter config
 ```

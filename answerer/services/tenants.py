@@ -4,7 +4,7 @@ import secrets
 from uuid import UUID, uuid4
 
 from models import Settings, SourceBreakdown, Tenant, TenantActivitySummary, TenantCreated, Usage
-from storage import postgres
+from storage import postgres, qdrant
 
 
 async def get_vendor_tenants_summary() -> list[TenantActivitySummary]:
@@ -60,6 +60,13 @@ async def get_tenant(tenant_id: UUID) -> Tenant | None:
 
 
 async def delete_tenant(tenant_id: UUID) -> bool:
+    # Drop Qdrant collection first — if this fails the tenant row still exists
+    # and the operation can be retried. We swallow NotFound since the collection
+    # may never have been created (no crawl/index jobs run yet).
+    try:
+        await qdrant.drop_collection(tenant_id)
+    except Exception:
+        pass
     return await postgres.delete_tenant(tenant_id)
 
 

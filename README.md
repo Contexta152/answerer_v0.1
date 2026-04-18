@@ -124,6 +124,33 @@ Qdrant runs on a dedicated GCE VM (`qdrant-server`, `10.128.0.3:6333`), shared a
 
 ---
 
+## Cloud Run Services
+
+| Service | URL | Description |
+|---|---|---|
+| `answerer` | `https://answerer-848760828618.us-central1.run.app` | Core RAG API |
+| `admin-console` | `https://admin-console-848760828618.us-central1.run.app` | Per-tenant admin UI |
+| `vendor-console` | `https://vendor-console-848760828618.us-central1.run.app` | Super-admin UI |
+| `widget-gateway` | `https://widget-gateway-848760828618.us-central1.run.app` | Public widget endpoint |
+
+---
+
+## Admin Console Pages
+
+| Page | Nav label | Description |
+|---|---|---|
+| Overview | Overview | Tenant ID, widget key, quota, usage, suspend/reinstate |
+| Settings | Settings | Pipeline parameters (top-k, score threshold, chunk settings) |
+| Knowledge Bases | Knowledge Bases | Create / Update / Delete indexed knowledge bases |
+| Guardrails | Guardrails | Block questions matching trigger phrases |
+| Curated Answers | Curated Answers | Exact-match Q&A pairs served before RAG |
+| Test Query | Test Query | Submit test questions, inspect retrieved snippets, call LLM |
+| Question Log | Question Log | Browse all questions with timing and chunk detail |
+| Analytics | Analytics | Aggregated metrics for a time range |
+| Jobs | Jobs | Check or stop individual crawl/index jobs |
+
+---
+
 ## Local Development
 
 ```bash

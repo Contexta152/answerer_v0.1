@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Get Started — Answerer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      background: #f0f4f8;
+      color: #0f172a;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 56px 16px 80px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -.04em;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .subtitle {
+      color: #5a6a82;
+      font-size: .95rem;
+      margin-bottom: 48px;
+      text-align: center;
+    }
+
+    .plans {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      width: 100%;
+      max-width: 900px;
+    }
+
+    @media (max-width: 700px) {
+      .plans { grid-template-columns: 1fr; max-width: 400px; }
+    }
+
+    .plan-card {
+      background: #fff;
+      border: 1px solid #dde3ea;
+      border-radius: 12px;
+      padding: 32px 28px 28px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .plan-card.highlighted {
+      border-color: #2563eb;
+      border-width: 2px;
+    }
+
+    .plan-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #2563eb;
+      color: #fff;
+      font-size: .68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      padding: 3px 12px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .plan-label {
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: #8fa0b8;
+      margin-bottom: 6px;
+    }
+
+    .plan-price {
+      font-size: 1.8rem;
+      font-weight: 800;
+      letter-spacing: -.04em;
+      color: #0f172a;
+      margin-bottom: 4px;
+    }
+
+    .plan-quota {
+      font-size: .8rem;
+      color: #5a6a82;
+      margin-bottom: 24px;
+    }
+
+    .plan-features {
+      list-style: none;
+      flex: 1;
+      margin-bottom: 28px;
+    }
+
+    .plan-features li {
+      font-size: .875rem;
+      color: #334155;
+      padding: 5px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .plan-features li::before {
+      content: '✓';
+      color: #16a34a;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .btn-checkout {
+      width: 100%;
+      padding: 11px;
+      background: #0f172a;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+
+    .plan-card.highlighted .btn-checkout { background: #2563eb; }
+    .plan-card.highlighted .btn-checkout:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-checkout:hover:not(:disabled) { background: #1e293b; }
+    .btn-checkout:disabled { opacity: .4; cursor: not-allowed; }
+
+    .btn-checkout.loading { opacity: .6; }
+
+    .unconfigured-note {
+      font-size: .75rem;
+      color: #94a3b8;
+      text-align: center;
+      margin-top: 8px;
+    }
+
+    .error-banner {
+      display: none;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      color: #dc2626;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: .875rem;
+      margin-bottom: 24px;
+      max-width: 900px;
+      width: 100%;
+    }
+
+    .loading-state {
+      color: #8fa0b8;
+      font-size: .9rem;
+      margin-top: 60px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Simple, transparent pricing</h1>
+<p class="subtitle">Pick the plan that fits your scale. All plans include the full feature set.</p>
+
+<div class="error-banner" id="error-banner"></div>
+
+<div class="loading-state" id="loading-state">Loading plans…</div>
+
+<div class="plans" id="plans-grid" style="display:none"></div>
+
+<script>
+const BASE = '';
+
+async function loadPlans() {
+  try {
+    const res = await fetch(`${BASE}/v1/checkout/plans`);
+    if (!res.ok) throw new Error('Failed to load plans');
+    const data = await res.json();
+    renderPlans(data.plans || []);
+  } catch (e) {
+    document.getElementById('loading-state').textContent = 'Failed to load plans.';
+  }
+}
+
+function renderPlans(plans) {
+  document.getElementById('loading-state').style.display = 'none';
+  const grid = document.getElementById('plans-grid');
+  grid.style.display = 'grid';
+
+  // Highlight the middle plan (growth)
+  const highlightIndex = Math.floor(plans.length / 2);
+
+  grid.innerHTML = plans.map((plan, i) => {
+    const highlighted = i === highlightIndex;
+    const badgeHtml = highlighted ? '<div class="plan-badge">Most popular</div>' : '';
+    const featuresHtml = (plan.features || []).map(f => `<li>${esc(f)}</li>`).join('');
+    const btnText = plan.configured ? 'Get started' : 'Coming soon';
+
+    return `
+      <div class="plan-card ${highlighted ? 'highlighted' : ''}">
+        ${badgeHtml}
+        <div class="plan-label">${esc(plan.label)}</div>
+        <div class="plan-price">${esc(plan.price)}</div>
+        <div class="plan-quota">${plan.quota.toLocaleString()} questions / month</div>
+        <ul class="plan-features">${featuresHtml}</ul>
+        <button class="btn-checkout" data-plan="${esc(plan.name)}" ${plan.configured ? '' : 'disabled'}>
+          ${btnText}
+        </button>
+        ${!plan.configured ? '<div class="unconfigured-note">Not yet available</div>' : ''}
+      </div>`;
+  }).join('');
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+document.getElementById('plans-grid').addEventListener('click', async e => {
+  const btn = e.target.closest('.btn-checkout');
+  if (!btn || btn.disabled) return;
+
+  const plan = btn.dataset.plan;
+  const origText = btn.textContent.trim();
+  btn.disabled = true;
+  btn.textContent = 'Preparing checkout…';
+  btn.classList.add('loading');
+  document.getElementById('error-banner').style.display = 'none';
+
+  try {
+    const res = await fetch(`${BASE}/v1/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showError(data.detail || 'Failed to create checkout. Please try again.');
+      return;
+    }
+    window.location.href = data.url;
+  } catch (e) {
+    showError('Network error. Please try again.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+    btn.classList.remove('loading');
+  }
+});
+
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+loadPlans();
+</script>
+</body>
+</html>

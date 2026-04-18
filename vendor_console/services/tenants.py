@@ -28,7 +28,7 @@ async def _fetch_answerer_summary() -> list[dict]:
         return resp.json().get("items", [])
 
 
-def _build_summary(activity: dict, quota_row: Optional[dict], email: Optional[str] = None) -> TenantSummary:
+def _build_summary(activity: dict, quota_row: Optional[dict], order_info: Optional[dict] = None) -> TenantSummary:
     plan = quota_row["plan"] if quota_row else "unknown"
     questions_quota = quota_row["questions_quota"] if quota_row else 0
     questions_30d = activity.get("questions_30d", 0) or 0
@@ -38,15 +38,23 @@ def _build_summary(activity: dict, quota_row: Optional[dict], email: Optional[st
     quota_pct = (questions_30d / questions_quota * 100.0) if questions_quota > 0 else 0.0
     error_rate = (error_7d / questions_7d * 100.0) if questions_7d > 0 else 0.0
 
+    # Prefer ls_orders.created_at (signup time) over tenant_created_at
+    created = (
+        order_info["created_at"]
+        if order_info and order_info.get("created_at")
+        else (quota_row["tenant_created_at"] if quota_row and quota_row.get("tenant_created_at") else "1970-01-01T00:00:00Z")
+    )
+
     src = activity.get("source_breakdown_7d") or {}
     return TenantSummary(
         tenant_id=activity["tenant_id"],
         name=activity["name"],
-        email=email,
+        email=order_info["email"] if order_info else None,
+        application_name=order_info["application_name"] if order_info else None,
         plan=plan,
         questions_quota=questions_quota,
         suspended=activity.get("suspended", False),
-        created=quota_row["tenant_created_at"] if quota_row and quota_row.get("tenant_created_at") else "1970-01-01T00:00:00Z",
+        created=created,
         quota_utilisation_pct=quota_pct,
         questions_7d=questions_7d,
         questions_30d=questions_30d,
@@ -70,13 +78,13 @@ async def list_tenants(
 ) -> dict:
     activity_items = await _fetch_answerer_summary()
     quota_map = {r["tenant_id"]: r for r in await postgres.list_tenant_quotas()}
-    email_map = await postgres.get_tenant_emails()
+    order_map = await postgres.get_tenant_order_info()
 
     summaries = []
     for item in activity_items:
         tid = str(item["tenant_id"])
         quota_row = quota_map.get(tid) or quota_map.get(UUID(tid))
-        summary = _build_summary(item, quota_row, email=email_map.get(tid))
+        summary = _build_summary(item, quota_row, order_info=order_map.get(tid))
         if suspended is not None and summary.suspended != suspended:
             continue
         summaries.append(summary)
@@ -91,4 +99,5 @@ async def get_tenant(tenant_id: UUID) -> Optional[TenantSummary]:
     if target is None:
         return None
     quota_row = await postgres.get_tenant_quota(tenant_id)
-    return _build_summary(target, quota_row)
+    order_map = await postgres.get_tenant_order_info()
+    return _build_summary(target, quota_row, order_info=order_map.get(str(tenant_id)))

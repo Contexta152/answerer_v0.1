@@ -41,23 +41,25 @@ async def lemonsqueezy_webhook(
     if attrs.get("status") != "paid":
         return {"received": True}
 
-    ls_order_id = str(payload["data"]["id"])
-    email       = attrs.get("user_email", "")
-    name        = attrs.get("user_name", email)
-    variant_id  = str(attrs.get("first_order_item", {}).get("variant_id", ""))
+    ls_order_id      = str(payload["data"]["id"])
+    email            = attrs.get("user_email", "")
+    name             = attrs.get("user_name", email)
+    variant_id       = str(attrs.get("first_order_item", {}).get("variant_id", ""))
+    custom_data      = payload.get("meta", {}).get("custom_data") or {}
+    application_name = custom_data.get("application_name") or None
 
     if not email:
         logger.warning("LS webhook order_created missing user_email, order_id=%s", ls_order_id)
         return {"received": True}
 
     # Idempotency — ignore duplicate deliveries
-    existing = await postgres.get_ls_order(ls_order_id)
+    existing = await postgres.get_order(ls_order_id)
     if existing:
         logger.info("Duplicate LS webhook for order %s, skipping", ls_order_id)
         return {"received": True}
 
     try:
-        result = await provisioning.provision_from_order(ls_order_id, email, name, variant_id)
+        result = await provisioning.provision_from_order(ls_order_id, email, name, variant_id, application_name)
         logger.info("Provisioned tenant %s for %s", result["tenant_id"], email)
     except Exception as exc:
         # If provisioning fails after claiming the ls_orders slot, LS will retry

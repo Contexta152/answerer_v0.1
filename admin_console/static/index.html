@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Console</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 <body>
 
@@ -44,7 +44,8 @@
       <button class="nav-item active" data-tab="overview"><span class="nav-icon">◎</span> Overview</button>
       <button class="nav-item" data-tab="settings"><span class="nav-icon">⚙</span> Settings</button>
 
-      <div class="nav-group-label">Knowledge Base</div>
+      <div class="nav-group-label">KnowledgeBase</div>
+      <button class="nav-item" data-tab="kbs"><span class="nav-icon">◎</span> KnowledgeBases</button>
       <button class="nav-item" data-tab="guardrails"><span class="nav-icon">🛡</span> Guardrails</button>
       <button class="nav-item" data-tab="curated"><span class="nav-icon">✦</span> Curated Answers</button>
 
@@ -80,7 +81,7 @@
         </div>
         <div class="data-row">
           <span class="data-label">Widget Key</span>
-          <span class="data-value mono" id="widget-key-value" style="filter:blur(4px);cursor:pointer;user-select:none" title="Click to reveal">—</span>
+          <span class="data-value mono blur-reveal" id="widget-key-value" title="Click to reveal">—</span>
         </div>
         <div class="data-row">
           <span class="data-label">Status</span>
@@ -108,40 +109,50 @@
     <div id="tab-settings" class="tab-panel">
       <div class="page-header">
         <h1>Settings</h1>
-        <p>RAG pipeline parameters and knowledge bases for this tenant.</p>
+        <p>RAG pipeline parameters and knowledgebases for this tenant.</p>
       </div>
-      <div class="settings-2col">
-        <div class="settings-left">
-          <div class="card">
-            <div class="card-title">Pipeline Parameters</div>
-            <div id="settings-content" class="loading">Loading…</div>
-          </div>
-        </div>
-        <div class="settings-right">
-          <div class="card">
-            <div class="card-title">Knowledge Bases</div>
-            <div id="kb-list-content" class="loading">Loading…</div>
-          </div>
+      <div class="card">
+        <div class="card-title">Pipeline Parameters</div>
+        <div id="settings-content" class="loading">Loading…</div>
+      </div>
+    </div>
 
-          <div class="card" id="kb-add-card">
-            <div class="card-title">Add Knowledge Base</div>
-            <div class="form-group">
-              <label for="kb-url">Start URL — only pages at or below this path will be crawled</label>
-              <input type="url" id="kb-url" placeholder="https://docs.example.com/guide/">
-            </div>
-            <div class="form-group">
-              <label for="kb-max-pages">Pages to crawl</label>
-              <select id="kb-max-pages">
-                <option value="10" selected>10</option>
-                <option value="100">100</option>
-                <option value="999999">ALL</option>
-              </select>
-            </div>
-            <button class="btn btn-primary" id="kb-create-btn">Crawl &amp; Index</button>
-            <div id="kb-create-msg" style="margin-top:10px;font-size:0.85rem"></div>
-          </div>
-        </div>
+    <!-- KNOWLEDGEBASES ──────────────────────────────────────────────────── -->
+    <div id="tab-kbs" class="tab-panel">
+      <div class="page-header">
+        <h1>KnowledgeBases</h1>
+        <p>Crawl and index documentation sites to power RAG answers.</p>
       </div>
+
+      <div class="card" id="kbs-add-card">
+        <div class="card-title">Add KnowledgeBase</div>
+        <div class="form-group">
+          <label for="kbs-name">KnowledgeBase Name</label>
+          <input type="text" id="kbs-name" placeholder="e.g. Product Docs">
+        </div>
+        <div class="form-group">
+          <label for="kbs-url">Start URL</label>
+          <input type="text" id="kbs-url" placeholder="https://docs.example.com/guide/">
+        </div>
+        <div class="form-group">
+          <label for="kbs-max-pages">Pages to crawl</label>
+          <select id="kbs-max-pages">
+            <option value="10" selected>10</option>
+            <option value="100">100</option>
+            <option value="999999">ALL</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="kbs-crawl-delay">Crawl rate — delay between requests: <span id="kbs-crawl-delay-val">0.0s</span></label>
+          <input type="range" id="kbs-crawl-delay" min="0" max="1" step="0.1" value="0">
+        </div>
+        <div class="kbs-btn-wrap">
+          <button class="btn btn-primary" id="kbs-create-btn">Crawl &amp; Index</button>
+        </div>
+        <div id="kbs-create-msg" class="create-msg"></div>
+      </div>
+
+      <div id="kbs-list" class="loading">Loading…</div>
     </div>
 
     <!-- GUARDRAILS ───────────────────────────────────────────────────────── -->
@@ -183,7 +194,7 @@
         </div>
 
         <button class="btn btn-primary" id="gr-add-btn">Add Guardrail</button>
-        <div id="gr-add-msg" class="msg-ok" style="margin-top:10px"></div>
+        <div id="gr-add-msg" class="msg-ok form-msg"></div>
       </div>
     </div>
 
@@ -213,7 +224,7 @@
         </div>
 
         <button class="btn btn-primary" id="ca-add-btn">Add Answer</button>
-        <div id="ca-add-msg" class="msg-ok" style="margin-top:10px"></div>
+        <div id="ca-add-msg" class="msg-ok form-msg"></div>
       </div>
     </div>
 
@@ -225,15 +236,25 @@
       </div>
 
       <div class="card">
+        <div class="period-pills" id="qlog-pills">
+          <button class="period-pill active" data-days="7">7 days</button>
+          <button class="period-pill" data-days="30">30 days</button>
+          <button class="period-pill" data-days="90">90 days</button>
+          <button class="period-pill" data-days="custom">Custom</button>
+        </div>
+        <div id="qlog-custom-range" class="custom-range" style="display:none">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="qlog-from">From</label>
+              <input type="datetime-local" id="qlog-from">
+            </div>
+            <div class="form-group">
+              <label for="qlog-to">To</label>
+              <input type="datetime-local" id="qlog-to">
+            </div>
+          </div>
+        </div>
         <div class="form-row">
-          <div class="form-group">
-            <label for="qlog-from">From</label>
-            <input type="datetime-local" id="qlog-from">
-          </div>
-          <div class="form-group">
-            <label for="qlog-to">To</label>
-            <input type="datetime-local" id="qlog-to">
-          </div>
           <div class="form-group">
             <label for="qlog-source">Source</label>
             <select id="qlog-source">
@@ -275,24 +296,26 @@
       </div>
 
       <div class="card">
-        <div class="quick-btns">
-          <button class="quick-btn" data-days="7">7d</button>
-          <button class="quick-btn" data-days="30">30d</button>
-          <button class="quick-btn" data-days="90">90d</button>
-          <button class="quick-btn" data-days="0">All</button>
+        <div class="period-pills" id="an-pills">
+          <button class="period-pill active" data-days="7">7 days</button>
+          <button class="period-pill" data-days="30">30 days</button>
+          <button class="period-pill" data-days="90">90 days</button>
+          <button class="period-pill" data-days="custom">Custom</button>
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="an-from">From</label>
-            <input type="datetime-local" id="an-from">
+        <div id="an-custom-range" class="custom-range" style="display:none">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="an-from">From</label>
+              <input type="datetime-local" id="an-from">
+            </div>
+            <div class="form-group">
+              <label for="an-to">To</label>
+              <input type="datetime-local" id="an-to">
+            </div>
           </div>
-          <div class="form-group">
-            <label for="an-to">To</label>
-            <input type="datetime-local" id="an-to">
-          </div>
+          <button class="btn btn-primary" id="an-load-btn">Load</button>
         </div>
-        <button class="btn btn-primary" id="an-load-btn">Load</button>
-        <div id="analytics-content" style="margin-top:20px"></div>
+        <div id="analytics-content" class="section-content"></div>
       </div>
     </div>
 
@@ -312,7 +335,7 @@
               <option value="index">Index</option>
             </select>
           </div>
-          <div class="form-group" style="flex:2">
+          <div class="form-group form-group-wide">
             <label for="job-id">Job ID</label>
             <input type="text" id="job-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" class="mono">
           </div>
@@ -323,7 +346,7 @@
           <button class="btn btn-danger" id="job-stop-btn">Stop Job</button>
         </div>
 
-        <div id="job-content" style="margin-top:20px"></div>
+        <div id="job-content" class="section-content"></div>
       </div>
     </div>
 
@@ -337,12 +360,12 @@
       <div class="card">
         <div class="card-title">Question</div>
         <div class="form-group">
-          <textarea id="tq-question" rows="3" placeholder="Type a question to test against your knowledge base…"></textarea>
+          <textarea id="tq-question" rows="3" placeholder="Type a question to test against your knowledgebase…"></textarea>
         </div>
         <div class="btn-row">
           <button class="btn btn-primary" id="tq-search-btn">Find Snippets</button>
         </div>
-        <div id="tq-search-msg" style="margin-top:8px;font-size:0.85rem"></div>
+        <div id="tq-search-msg" class="search-msg"></div>
       </div>
 
       <div id="tq-results-section" style="display:none">
@@ -355,21 +378,21 @@
               <input type="number" class="range-num" id="tq-threshold-num" min="0" max="1" step="0.01" value="0.5">
             </div>
           </div>
-          <div id="tq-threshold-summary" style="font-size:0.83rem;color:var(--text-muted);margin-top:6px"></div>
+          <div id="tq-threshold-summary" class="threshold-summary"></div>
         </div>
 
         <div class="card">
           <div class="card-title" id="tq-snippets-title">Snippets</div>
           <div id="tq-snippets-list"></div>
-          <div class="btn-row" style="margin-top:16px">
+          <div class="btn-row btn-row-mt">
             <button class="btn btn-secondary" id="tq-llm-btn">Submit to LLM for full answer</button>
-            <span id="tq-llm-msg" style="margin-left:10px;font-size:0.85rem"></span>
+            <span id="tq-llm-msg" class="llm-msg"></span>
           </div>
         </div>
 
         <div class="card" id="tq-answer-card" style="display:none">
-          <div class="card-title">Answer <span id="tq-answer-source" class="badge" style="margin-left:8px"></span></div>
-          <div id="tq-answer-text" style="white-space:pre-wrap;line-height:1.6;font-size:0.9rem"></div>
+          <div class="card-title">Answer <span id="tq-answer-source" class="badge"></span></div>
+          <div id="tq-answer-text" class="answer-text"></div>
         </div>
       </div>
     </div>
@@ -521,10 +544,42 @@ document.getElementById('logout-btn').addEventListener('click', logout);
 
 // ── Tab navigation ────────────────────────────────────────────────────────────
 
+// ── Period pills ──────────────────────────────────────────────────────────────
+
+function applyPeriodPill(pillsId, fromId, toId, customRangeId, days, callback) {
+  document.querySelectorAll(`#${pillsId} .period-pill`).forEach(b => b.classList.remove('active'));
+  const activePill = document.querySelector(`#${pillsId} [data-days="${days}"]`);
+  if (activePill) activePill.classList.add('active');
+  const customRange = document.getElementById(customRangeId);
+  if (days === 'custom') { customRange.style.display = 'block'; return; }
+  customRange.style.display = 'none';
+  const now = new Date();
+  document.getElementById(toId).value   = now.toISOString().slice(0, 16);
+  document.getElementById(fromId).value = new Date(now - days * 86400000).toISOString().slice(0, 16);
+  if (callback) callback();
+}
+
+document.getElementById('qlog-pills').addEventListener('click', e => {
+  const pill = e.target.closest('.period-pill');
+  if (!pill) return;
+  const raw = pill.dataset.days;
+  applyPeriodPill('qlog-pills', 'qlog-from', 'qlog-to', 'qlog-custom-range', raw === 'custom' ? 'custom' : parseInt(raw), () => loadQlog(0));
+});
+
+document.getElementById('an-pills').addEventListener('click', e => {
+  const pill = e.target.closest('.period-pill');
+  if (!pill) return;
+  const raw = pill.dataset.days;
+  applyPeriodPill('an-pills', 'an-from', 'an-to', 'an-custom-range', raw === 'custom' ? 'custom' : parseInt(raw), loadAnalytics);
+});
+
 const tabLoaders = {
   settings:   loadSettings,
+  kbs:        loadKBs,
   guardrails: loadGuardrails,
   curated:    loadCurated,
+  qlog:       () => applyPeriodPill('qlog-pills', 'qlog-from', 'qlog-to', 'qlog-custom-range', 7, () => loadQlog(0)),
+  analytics:  () => applyPeriodPill('an-pills', 'an-from', 'an-to', 'an-custom-range', 7, loadAnalytics),
 };
 
 function showTab(name) {
@@ -669,115 +724,165 @@ async function loadSettings() {
     wireRangeInputs(el);
     document.getElementById('settings-save-btn').addEventListener('click', saveSettings);
   } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load settings.'; } }
-
-  // Also load KB list
-  loadKBList();
 }
 
-async function loadKBList() {
-  const el = document.getElementById('kb-list-content');
+// ── KnowledgeBases ───────────────────────────────────────────────────────────
+
+async function loadKBs() {
+  const el = document.getElementById('kbs-list');
   if (!el) return;
   el.className = 'loading'; el.textContent = 'Loading…';
   try {
     const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawls`);
-    if (!res.ok) { el.className = 'msg-err'; el.textContent = 'Failed to load KBs.'; return; }
+    if (!res.ok) { el.className = 'msg-err'; el.textContent = 'Failed to load knowledgebases.'; return; }
     const d = await res.json();
     const items = d.items || [];
     const activeCount = items.filter(kb => kb.status !== 'failed').length;
     const atLimit = activeCount >= 5;
 
-    // Show/hide add card based on limit
-    const addCard = document.getElementById('kb-add-card');
-    if (addCard) {
-      addCard.style.display = atLimit ? 'none' : '';
-    }
+    const addCard = document.getElementById('kbs-add-card');
+    if (addCard) addCard.style.display = atLimit ? 'none' : '';
 
+    el.className = '';
     if (!items.length) {
-      el.className = '';
-      el.innerHTML = '<div class="empty-state">No knowledge bases yet.</div>';
+      el.innerHTML = '<div class="empty-state" style="margin-top:16px">No knowledgebases yet. Add one above.</div>';
       return;
     }
 
-    el.className = '';
-    const countHtml = `<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px">${activeCount} / 5 knowledge bases used</div>`;
-    const listHtml = items.map(kb => {
-      const pct = kb.progress ? (kb.progress.pages_crawled || 0) : 0;
-      const statusLabel = {pending: 'Pending', running: `Crawling (${pct} pages)`, completed: 'Ready', failed: 'Failed'}[kb.status] || kb.status;
-      const statusClass = {pending: 'badge-yellow', running: 'badge-blue', completed: 'badge-green', failed: 'badge-red'}[kb.status] || '';
-      const tokensHtml = (kb.status === 'completed' && kb.embed_tokens != null)
-        ? `<span class="muted" style="font-size:0.75rem">${kb.embed_tokens.toLocaleString()} embed tokens</span>`
-        : '';
-      return `<div class="data-row" style="flex-direction:column;align-items:flex-start;gap:2px;padding:10px 0;border-bottom:1px solid #f0f0f0">
-        <span class="mono" style="font-size:0.8rem;word-break:break-all">${esc(kb.url||'Unknown URL')}</span>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
-          <span class="badge ${statusClass}">${esc(statusLabel)}</span>
-          ${tokensHtml}
-          <span class="muted" style="font-size:0.75rem">${fmtDate(kb.created)}</span>
-          ${kb.error ? `<span style="color:#c00;font-size:0.75rem">${esc(kb.error)}</span>` : ''}
-        </div>
-      </div>`;
-    }).join('');
-    el.innerHTML = countHtml + listHtml;
-  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load knowledge bases.'; } }
+    const crawlStatusLabel = {pending: 'Crawl pending', running: 'Crawling…', completed: 'Crawled', failed: 'Crawl failed'};
+    const crawlStatusClass = {pending: 'badge-yellow', running: 'badge-blue', completed: 'badge-green', failed: 'badge-red'};
+    const idxStatusLabel   = {pending: 'Index pending', running: 'Indexing…', completed: 'Indexed', failed: 'Index failed'};
+    const idxStatusClass   = {pending: 'badge-yellow', running: 'badge-blue', completed: 'badge-green', failed: 'badge-red'};
+
+    el.innerHTML = `<div class="kbs-count-label">${activeCount} / 5 knowledgebases used</div>` +
+      items.map(kb => {
+        const pagesCrawled = kb.progress?.pages_crawled ?? '—';
+        const pagesIndexed = kb.pages_indexed ?? '—';
+        const maxPages     = kb.progress?.pages_total ?? null;
+        const crawledOn    = kb.completed  ? fmtDate(kb.completed)       : (kb.status === 'running' ? 'in progress…' : '—');
+        const indexedOn    = kb.index_completed ? fmtDate(kb.index_completed) : (kb.index_status === 'running' ? 'in progress…' : '—');
+        const tokens       = kb.embed_tokens != null ? `${kb.embed_tokens.toLocaleString()} embed tokens` : '';
+
+        const crawlBadge = `<span class="badge ${crawlStatusClass[kb.status]||'badge-gray'}">${crawlStatusLabel[kb.status]||kb.status}</span>`;
+        const idxBadge   = kb.index_status ? `<span class="badge ${idxStatusClass[kb.index_status]||'badge-gray'}">${idxStatusLabel[kb.index_status]||kb.index_status}</span>` : '';
+
+        const canUpdate = kb.status === 'completed';
+        const canDelete = kb.status !== 'running';
+
+        const displayName = kb.name || '';
+        return `<div class="card kb-card" id="kb-card-${esc(kb.job_id)}">
+          <div class="kb-card-heading">${esc(displayName || '—')}</div>
+          <div class="kb-url">${esc(kb.url||'Unknown URL')}</div>
+          <div class="kb-status-row">${crawlBadge}<span>${pagesCrawled}${maxPages ? ' / '+maxPages : ''} pages crawled ${crawledOn}</span>${kb.error ? `<span class="kb-error-text">${esc(kb.error)}</span>` : ''}</div>
+          <div class="kb-index-row">${idxBadge || '<span class="badge badge-gray">not indexed</span>'}<span>${pagesIndexed} pages indexed ${indexedOn}</span></div>
+          ${tokens ? `<div class="kb-tokens-label">${tokens}</div>` : ''}
+          <div class="kb-actions">
+            <button class="btn btn-secondary btn-sm" data-action="kb-update" data-id="${esc(kb.job_id)}" data-url="${esc(kb.url)}" data-name="${esc(displayName)}" data-maxpages="${maxPages||10}" ${canUpdate?'':'disabled'} title="${canUpdate?'Re-crawl and re-index this source':'Crawl must be completed first'}">Update</button>
+            <button class="btn btn-danger btn-sm" data-action="kb-delete" data-id="${esc(kb.job_id)}" ${canDelete?'':'disabled'}>Delete</button>
+          </div>
+          <div id="kb-msg-${esc(kb.job_id)}" class="kb-msg"></div>
+        </div>`;
+      }).join('');
+  } catch(e) { if (e.message !== 'Unauthorised') { el.className = 'msg-err'; el.textContent = 'Failed to load knowledgebases.'; } }
 }
 
-// ── Create KB ─────────────────────────────────────────────────────────────────
-
 document.getElementById('main-content').addEventListener('click', async e => {
-  if (e.target.id !== 'kb-create-btn') return;
-  const url      = document.getElementById('kb-url').value.trim();
-  const maxPages = parseInt(document.getElementById('kb-max-pages').value) || 10;
-  const msg      = document.getElementById('kb-create-msg');
-  const btn      = document.getElementById('kb-create-btn');
-  if (!url) { msg.style.color = '#c00'; msg.textContent = 'Enter a URL.'; return; }
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  if (action === 'kb-delete') await deleteKB(btn.dataset.id);
+  else if (action === 'kb-update') await updateKB(btn.dataset.id, btn.dataset.url, parseInt(btn.dataset.maxpages)||10, btn.dataset.name||'', parseFloat(document.getElementById('kbs-crawl-delay').value)||0);
+});
 
-  btn.disabled = true;
-  msg.style.color = '#555';
+async function deleteKB(crawlJobId) {
+  if (!confirm('Delete this knowledgebase? All indexed vectors will be removed.')) return;
+  const msgEl = document.getElementById(`kb-msg-${crawlJobId}`);
+  const card  = document.getElementById(`kb-card-${crawlJobId}`);
+  if (msgEl) { msgEl.className = ''; msgEl.textContent = 'Deleting…'; }
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${crawlJobId}`, {method: 'DELETE'});
+    if (res.ok || res.status === 204) {
+      if (card) card.remove();
+      loadKBs();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      if (msgEl) { msgEl.className = 'msg-err'; msgEl.textContent = `Delete failed: ${d.detail||JSON.stringify(d)}`; }
+    }
+  } catch(e) { if (msgEl) { msgEl.className = 'msg-err'; msgEl.textContent = `Error: ${e.message}`; } }
+}
+
+async function updateKB(oldCrawlId, url, maxPages, name, crawlDelay=0) {
+  const msgEl = document.getElementById(`kb-msg-${oldCrawlId}`);
+  const btns  = document.querySelectorAll(`#kb-card-${oldCrawlId} button`);
+  btns.forEach(b => b.disabled = true);
+  const setMsg = (txt, cls='') => { if (msgEl) { msgEl.className = cls; msgEl.textContent = txt; } };
 
   try {
-    // Step 1: start crawl
-    msg.textContent = 'Starting crawl…';
-    const crawlRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl`, {method: 'POST', body: JSON.stringify({url, max_pages: maxPages})});
+    // 1. Start new crawl
+    setMsg('Starting re-crawl…');
+    const crawlRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl`, {method: 'POST', body: JSON.stringify({url, max_pages: maxPages, name: name||undefined, crawl_delay: crawlDelay})});
     const crawlJob = await crawlRes.json();
-    if (!crawlRes.ok) { msg.style.color='#c00'; msg.textContent = `Crawl failed: ${crawlJob.detail||JSON.stringify(crawlJob)}`; btn.disabled=false; return; }
+    if (!crawlRes.ok) { setMsg(`Crawl failed: ${crawlJob.detail||JSON.stringify(crawlJob)}`, 'msg-err'); btns.forEach(b => b.disabled=false); return; }
+    const newCrawlId = crawlJob.job_id;
 
-    // Step 2: poll crawl until complete
+    // 2. Poll new crawl
+    await pollJob(newCrawlId, 'crawl', j => { const p=j.progress; setMsg(`Crawling… ${p?p.pages_crawled+' pages':''}`); });
+    const finalCrawl = await (await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${newCrawlId}`)).json();
+    if (finalCrawl.status === 'failed') { setMsg(`Crawl failed: ${finalCrawl.error||'unknown'}`, 'msg-err'); btns.forEach(b => b.disabled=false); return; }
+
+    // 3. Delete old crawl (removes old Qdrant vectors + records)
+    setMsg('Replacing old content…');
+    await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${oldCrawlId}`, {method: 'DELETE'});
+
+    // 4. Start new index
+    setMsg('Indexing new content…');
+    const idxRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/index`, {method: 'POST', body: JSON.stringify({crawl_job_id: newCrawlId})});
+    const idxJob = await idxRes.json();
+    if (!idxRes.ok) { setMsg(`Index failed: ${idxJob.detail||JSON.stringify(idxJob)}`, 'msg-err'); btns.forEach(b => b.disabled=false); return; }
+
+    // 5. Poll index
+    const idxFinal = await pollJob(idxJob.job_id, 'index', j => { const p=j.progress; setMsg(`Indexing… ${p?p.pages_indexed+' / '+p.pages_total+' pages':''}`); });
+    const tokens = idxFinal?.progress?.embed_tokens;
+    setMsg(`Updated${tokens != null ? ' · '+tokens.toLocaleString()+' embed tokens' : ''}.`, 'msg-ok');
+    loadKBs();
+  } catch(e) { setMsg(`Error: ${e.message}`, 'msg-err'); btns.forEach(b => b.disabled=false); }
+}
+
+document.getElementById('kbs-crawl-delay').addEventListener('input', function() {
+  document.getElementById('kbs-crawl-delay-val').textContent = parseFloat(this.value).toFixed(1) + 's';
+});
+
+document.getElementById('kbs-create-btn').addEventListener('click', async () => {
+  const name       = document.getElementById('kbs-name').value.trim();
+  const url        = document.getElementById('kbs-url').value.trim();
+  const maxPages   = parseInt(document.getElementById('kbs-max-pages').value) || 10;
+  const crawlDelay = parseFloat(document.getElementById('kbs-crawl-delay').value) || 0;
+  const msg      = document.getElementById('kbs-create-msg');
+  const btn      = document.getElementById('kbs-create-btn');
+  if (!url) { msg.className = 'msg-err create-msg'; msg.textContent = 'Enter a URL.'; return; }
+  btn.disabled = true; msg.className = 'create-msg';
+  try {
+    msg.textContent = 'Starting crawl…';
+    const crawlRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl`, {method: 'POST', body: JSON.stringify({url, max_pages: maxPages, name: name||undefined, crawl_delay: crawlDelay})});
+    const crawlJob = await crawlRes.json();
+    if (!crawlRes.ok) { msg.className = 'msg-err create-msg'; msg.textContent = `Crawl failed: ${crawlJob.detail||JSON.stringify(crawlJob)}`; btn.disabled=false; return; }
     const crawlId = crawlJob.job_id;
-    await pollJob(crawlId, 'crawl', (j) => {
-      const p = j.progress;
-      msg.textContent = `Crawling… ${p ? p.pages_crawled + ' pages' : ''}`;
-      loadKBList();
-    });
-
-    const statusRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${crawlId}`);
-    const finalCrawl = await statusRes.json();
-    if (finalCrawl.status === 'failed') { msg.style.color='#c00'; msg.textContent = `Crawl failed: ${finalCrawl.error||'unknown error'}`; btn.disabled=false; loadKBList(); return; }
-
-    // Step 3: start index
+    await pollJob(crawlId, 'crawl', j => { const p=j.progress; msg.textContent=`Crawling… ${p?p.pages_crawled+' pages':''}`; loadKBs(); });
+    const finalCrawl = await (await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${crawlId}`)).json();
+    if (finalCrawl.status === 'failed') { msg.className = 'msg-err create-msg'; msg.textContent=`Crawl failed: ${finalCrawl.error||'unknown error'}`; btn.disabled=false; loadKBs(); return; }
     msg.textContent = 'Crawl complete. Starting indexing…';
     const indexRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/index`, {method: 'POST', body: JSON.stringify({crawl_job_id: crawlId})});
     const indexJob = await indexRes.json();
-    if (!indexRes.ok) { msg.style.color='#c00'; msg.textContent = `Index failed: ${indexJob.detail||JSON.stringify(indexJob)}`; btn.disabled=false; return; }
-
-    // Step 4: poll index
-    const idxFinal = await pollJob(indexJob.job_id, 'index', (j) => {
-      const p = j.progress;
-      msg.textContent = `Indexing… ${p ? p.pages_indexed + ' / ' + p.pages_total + ' pages' : ''}`;
-    });
-
-    // Show token count from final index progress
+    if (!indexRes.ok) { msg.className = 'msg-err create-msg'; msg.textContent=`Index failed: ${indexJob.detail||JSON.stringify(indexJob)}`; btn.disabled=false; return; }
+    const idxFinal = await pollJob(indexJob.job_id, 'index', j => { const p=j.progress; msg.textContent=`Indexing… ${p?p.pages_indexed+' / '+p.pages_total+' pages':''}`; });
     const embedTokens = idxFinal?.progress?.embed_tokens;
-    const tokenNote = embedTokens != null ? ` · ${embedTokens.toLocaleString()} embed tokens used` : '';
-
-    msg.style.color = '#1a7f37';
-    msg.textContent = `Knowledge base ready${tokenNote}.`;
-    document.getElementById('kb-url').value = '';
-    loadKBList();
-  } catch(e) {
-    msg.style.color = '#c00'; msg.textContent = `Error: ${e.message}`;
-  } finally {
-    btn.disabled = false;
-  }
+    msg.className = 'msg-ok create-msg';
+    msg.textContent = `KnowledgeBase ready${embedTokens != null ? ' · '+embedTokens.toLocaleString()+' embed tokens' : ''}.`;
+    document.getElementById('kbs-name').value = '';
+    document.getElementById('kbs-url').value = '';
+    loadKBs();
+  } catch(e) { msg.className = 'msg-err create-msg'; msg.textContent=`Error: ${e.message}`; }
+  finally { btn.disabled = false; }
 });
 
 async function pollJob(jobId, type, onProgress) {
@@ -852,8 +957,8 @@ function renderGuardrails() {
           </td>
           <td class="nowrap">
             <button class="btn btn-secondary btn-sm" data-id="${g.id}" data-action="gr-edit">Edit</button>
-            <button class="btn btn-danger btn-sm" data-id="${g.id}" data-action="gr-delete" style="margin-left:6px">Delete</button>
-            <div id="gr-msg-${g.id}" style="margin-top:4px"></div>
+            <button class="btn btn-danger btn-sm" data-id="${g.id}" data-action="gr-delete">Delete</button>
+            <div id="gr-msg-${g.id}" class="row-msg"></div>
             <div id="gr-edit-${g.id}"></div>
           </td>
         </tr>`).join('')}
@@ -1002,16 +1107,16 @@ function renderCurated() {
       <thead><tr><th>Question</th><th>Answer</th><th>Created</th><th></th></tr></thead>
       <tbody>${curatedAnswers.map(c => `
         <tr>
-          <td style="max-width:220px">
+          <td class="cell-q">
             ${esc(c.question)}
             <div class="mono muted small">${esc(c.id)}</div>
           </td>
-          <td style="max-width:260px">${esc(c.answer)}</td>
+          <td class="cell-a">${esc(c.answer)}</td>
           <td class="nowrap small muted">${fmtDate(c.created)}</td>
           <td class="nowrap">
             <button class="btn btn-secondary btn-sm" data-id="${c.id}" data-action="ca-edit">Edit</button>
-            <button class="btn btn-danger btn-sm" data-id="${c.id}" data-action="ca-delete" style="margin-left:6px">Delete</button>
-            <div id="ca-msg-${c.id}" style="margin-top:4px"></div>
+            <button class="btn btn-danger btn-sm" data-id="${c.id}" data-action="ca-delete">Delete</button>
+            <div id="ca-msg-${c.id}" class="row-msg"></div>
             <div id="ca-edit-${c.id}"></div>
           </td>
         </tr>`).join('')}
@@ -1138,7 +1243,7 @@ async function loadQlog(offset) {
         <tbody id="qlog-tbody">${qlogItems.map((q, i) => `<tr data-idx="${i}" class="qlog-row">
           <td class="nowrap small muted">${fmtDate(q.timestamp)}</td>
           <td>${q.word_count ?? '—'}</td>
-          <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(q.question)}</td>
+          <td class="cell-question">${esc(q.question)}</td>
           <td>${sourceBadge(q.source)}</td>
           <td>${msVal(q.timing?.total_ms)}</td>
           <td>${msVal(q.timing?.embed_ms)}</td>
@@ -1194,10 +1299,10 @@ function showQlogDetail(idx, row) {
         ${q.matched_question ? `<span class="detail-label">Matched Q</span><span class="detail-val">${esc(q.matched_question)}</span>` : ''}
         ${q.error ? `<span class="detail-label">Error</span><span class="detail-val msg-err">${esc(q.error)}</span>` : ''}
       </div>
-      <div class="detail-label" style="margin-bottom:6px">Question</div>
+      <div class="detail-label detail-label-spaced">Question</div>
       <div class="detail-answer">${esc(q.question)}</div>
-      ${q.answer ? `<div class="detail-label" style="margin-bottom:6px">Answer</div><div class="detail-answer">${esc(q.answer)}</div>` : ''}
-      <div class="detail-grid" style="margin-bottom:10px">
+      ${q.answer ? `<div class="detail-label detail-label-spaced">Answer</div><div class="detail-answer">${esc(q.answer)}</div>` : ''}
+      <div class="detail-grid detail-grid-mb">
         <span class="detail-label">Total ms</span><span class="detail-val ms-val">${t.total_ms ?? '—'}</span>
         <span class="detail-label">Embed ms</span><span class="detail-val ms-val">${t.embed_ms ?? '—'}</span>
         <span class="detail-label">Guardrail ms</span><span class="detail-val ms-val">${t.guardrail_check_ms ?? '—'}</span>
@@ -1207,7 +1312,7 @@ function showQlogDetail(idx, row) {
         <span class="detail-label">Answer tokens</span><span class="detail-val ms-val">${q.answer_tokens ?? '—'}</span>
         <span class="detail-label">Embed tokens</span><span class="detail-val ms-val">${q.embed_tokens ?? '—'}</span>
       </div>
-      ${chunkHtml ? `<div class="detail-label" style="margin-bottom:6px">Chunks (${(q.chunks||[]).length})</div>${chunkHtml}` : ''}
+      ${chunkHtml ? `<div class="detail-label detail-label-spaced">Chunks (${(q.chunks||[]).length})</div>${chunkHtml}` : ''}
     </div>`;
 }
 
@@ -1223,25 +1328,7 @@ document.getElementById('qlog-next').addEventListener('click', () => {
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
 
-document.querySelectorAll('.quick-btn[data-days]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const days = parseInt(btn.dataset.days);
-    const now  = new Date();
-    const toInput  = document.getElementById('an-to');
-    const fromInput = document.getElementById('an-from');
-    toInput.value = now.toISOString().slice(0,16);
-    if (days === 0) {
-      fromInput.value = '';
-    } else {
-      const from = new Date(now.getTime() - days * 86400000);
-      fromInput.value = from.toISOString().slice(0,16);
-    }
-  });
-});
-
-document.getElementById('an-load-btn').addEventListener('click', async () => {
+async function loadAnalytics() {
   const el   = document.getElementById('analytics-content');
   const from = document.getElementById('an-from').value;
   const to   = document.getElementById('an-to').value;
@@ -1282,12 +1369,14 @@ document.getElementById('an-load-btn').addEventListener('click', async () => {
           <div class="stat-card-value">${src[k].toLocaleString()}</div>
         </div>` : '').join('')}
       </div>` : ''}
-      <details style="margin-top:12px">
-        <summary style="cursor:pointer;font-size:.78rem;color:var(--text-muted)">Raw JSON</summary>
-        <pre style="font-family:var(--mono);font-size:.78rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;overflow-x:auto;margin-top:8px">${JSON.stringify(d, null, 2)}</pre>
+      <details class="details-raw">
+        <summary>Raw JSON</summary>
+        <pre class="raw-json">${JSON.stringify(d, null, 2)}</pre>
       </details>`;
   } catch(e) { if (e.message !== 'Unauthorised') el.innerHTML = '<div class="msg-err">Failed to load analytics.</div>'; }
-});
+}
+
+document.getElementById('an-load-btn').addEventListener('click', loadAnalytics);
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
 
@@ -1300,7 +1389,7 @@ function renderJobProgress(p) {
     html += `<div class="data-row"><span class="data-label">Pages</span><span class="data-value">${p.pages_indexed ?? p.pages_crawled ?? 0}${p.pages_total ? ' / ' + p.pages_total : ''}</span></div>`;
   }
   if (hasIndexing) {
-    html += `<div class="progress-grid" style="margin-top:10px">`;
+    html += `<div class="progress-grid">`;
     if (p.chunks_created != null)   html += `<div class="progress-cell"><div class="progress-cell-label">Chunks</div><div class="progress-cell-value">${p.chunks_created.toLocaleString()}</div></div>`;
     if (p.vectors_upserted != null) html += `<div class="progress-cell"><div class="progress-cell-label">Vectors</div><div class="progress-cell-value">${p.vectors_upserted.toLocaleString()}</div></div>`;
     if (p.embed_tokens != null)     html += `<div class="progress-cell"><div class="progress-cell-label">Embed Tokens</div><div class="progress-cell-value">${p.embed_tokens.toLocaleString()}</div></div>`;
@@ -1323,7 +1412,7 @@ document.getElementById('job-check-btn').addEventListener('click', async () => {
     if (!res.ok) { el.innerHTML = `<div class="msg-err">Error: ${d.message||JSON.stringify(d)}</div>`; return; }
     const statusCls = {pending:'badge-yellow', running:'badge-blue', completed:'badge-green', failed:'badge-red'};
     el.innerHTML = `
-      <div class="card" style="margin:0">
+      <div class="card card-no-mb">
         <div class="data-row"><span class="data-label">Job ID</span><span class="data-value mono">${esc(d.job_id)}</span></div>
         <div class="data-row"><span class="data-label">Status</span><span class="data-value"><span class="badge ${statusCls[d.status]||'badge-gray'}">${d.status}</span></span></div>
         <div class="data-row"><span class="data-label">Created</span><span class="data-value">${fmtDate(d.created)}</span></div>
@@ -1364,11 +1453,11 @@ function tqRenderSnippets() {
   list.innerHTML = tqChunks.map((c, i) => {
     const meets = c.score >= threshold;
     const scoreClass = c.score >= 0.8 ? 'badge-green' : c.score >= 0.5 ? 'badge-blue' : 'badge-gray';
-    return `<div class="chunk-mini" style="${meets ? '' : 'opacity:0.35;'}">
+    return `<div class="chunk-mini${meets ? '' : ' chunk-dimmed'}">
       <div class="chunk-mini-head">
-        <span class="mono" style="font-size:0.78rem">${esc(c.source)}</span>
+        <span class="mono">${esc(c.source)}</span>
         <span class="badge ${scoreClass}">score ${c.score.toFixed(3)}</span>
-        <span class="muted" style="font-size:0.75rem">${c.tokens} tokens</span>
+        <span class="muted">${c.tokens} tokens</span>
       </div>
       <div class="chunk-mini-body">${esc(c.text)}</div>
     </div>`;

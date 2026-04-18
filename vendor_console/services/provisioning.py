@@ -22,6 +22,7 @@ _PLAN_TO_QUOTA: dict[str, int] = {
 }
 _DEFAULT_PLAN = "starter"
 _DEFAULT_QUOTA = 1_000
+_ENTERPRISE_VARIANT_ID = "enterprise"
 
 
 def _variant_to_plan(variant_id: Optional[str]) -> str:
@@ -76,6 +77,7 @@ async def provision_from_order(
     email: str,
     name: str,
     variant_id: Optional[str],
+    application_name: Optional[str] = None,
 ) -> dict:
     tenant_id = uuid4()
     plan = _variant_to_plan(variant_id)
@@ -84,7 +86,7 @@ async def provision_from_order(
     # Claim the order slot FIRST — the PK constraint makes this atomic.
     # If a concurrent or retry call reaches here simultaneously, one will
     # raise UniqueViolationError and stop before creating any tenant.
-    await postgres.insert_ls_order(ls_order_id, tenant_id, email, name, variant_id, plan)
+    await postgres.insert_order(ls_order_id, tenant_id, email, name, variant_id, plan, application_name)
 
     answerer_result, admin_result = await asyncio.gather(
         _create_answerer_tenant(tenant_id, name),
@@ -98,3 +100,36 @@ async def provision_from_order(
     logger.info("[EMAIL STUB] tenant_id=%s email=%s temp_password=%s", tenant_id, email, admin_result["temp_password"])
 
     return {"tenant_id": str(tenant_id), "email": email}
+
+
+async def provision_enterprise(
+    name: str,
+    email: str,
+    application_name: str,
+    plan: str,
+    questions_quota: int,
+) -> dict:
+    tenant_id = uuid4()
+    order_id = f"enterprise_{uuid4()}"
+
+    # Write the order record first — PK constraint is the idempotency gate,
+    # same pattern as provision_from_order.
+    await postgres.insert_order(order_id, tenant_id, email, name, _ENTERPRISE_VARIANT_ID, plan, application_name)
+
+    answerer_result, admin_result = await asyncio.gather(
+        _create_answerer_tenant(tenant_id, name),
+        _create_admin_user(tenant_id, email, name),
+    )
+
+    await _push_quota(tenant_id, questions_quota, plan)
+
+    logger.info(
+        "[ENTERPRISE] order_id=%s tenant_id=%s email=%s plan=%s quota=%d",
+        order_id, tenant_id, email, plan, questions_quota,
+    )
+
+    return {
+        "tenant_id": str(tenant_id),
+        "email": email,
+        "temp_password": admin_result.get("temp_password"),
+    }

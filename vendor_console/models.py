@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TokenPair(BaseModel):
@@ -24,6 +24,7 @@ class TenantSummary(BaseModel):
     tenant_id: UUID
     name: str
     email: Optional[str] = None
+    application_name: Optional[str] = None
     plan: str
     questions_quota: int
     suspended: bool
@@ -49,3 +50,11 @@ class PaymentEvent(BaseModel):
     tenant_id: UUID
     plan: str
     questions_quota: int
+
+
+class CreateTenantRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    email: str = Field(..., pattern=r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+    application_name: str = Field(..., min_length=1, max_length=200)
+    plan: Literal["starter", "growth", "professional"]
+    questions_quota: Optional[int] = Field(None, ge=0)

@@ -113,6 +113,7 @@ class Job(BaseModel):
     error: Optional[str] = None
     progress: Optional[JobProgress] = None
     url: Optional[str] = None
+    name: Optional[str] = None
 
 
 class SourceBreakdown(BaseModel):

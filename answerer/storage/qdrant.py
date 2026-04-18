@@ -139,6 +139,24 @@ async def similarity_search(
     ]
 
 
+async def delete_vectors_by_crawl_job(tenant_id: UUID, crawl_job_id: UUID) -> None:
+    """Delete all vectors belonging to a specific crawl job."""
+    client = await _get_client()
+    f = Filter(
+        must=[
+            FieldCondition(key="crawl_job_id", match=MatchValue(value=str(crawl_job_id))),
+        ]
+    )
+    try:
+        await client.delete(
+            collection_name=_collection_name(tenant_id),
+            points_selector=FilterSelector(filter=f),
+        )
+    except Exception:
+        # Collection may not exist yet (never indexed) — that's fine
+        pass
+
+
 async def drop_collection(tenant_id: UUID) -> None:
     """Delete the tenant's entire Qdrant collection."""
     client = await _get_client()

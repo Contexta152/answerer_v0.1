@@ -19,7 +19,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://admin-console-848760828618.us-central1.run.app"],
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Widget-Key", "X-Service-Key"],
 )
 
 app.include_router(tenants.router)

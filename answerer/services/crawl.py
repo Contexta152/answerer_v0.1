@@ -38,6 +38,8 @@ async def start_crawl(
     url: str,
     max_pages: int,
     background_tasks: BackgroundTasks,
+    name: str | None = None,
+    crawl_delay: float = 0.0,
 ) -> Job:
     tenant = await pg_store.get_tenant(tenant_id)
     if tenant is None:
@@ -57,8 +59,8 @@ async def start_crawl(
             detail="A crawl job is already running for this tenant",
         )
 
-    job = await jobs_store.create_job(tenant_id, "crawl", url=url)
-    background_tasks.add_task(_run_crawl, job.job_id, tenant_id, url, max_pages)
+    job = await jobs_store.create_job(tenant_id, "crawl", url=url, name=name)
+    background_tasks.add_task(_run_crawl, job.job_id, tenant_id, url, max_pages, crawl_delay)
     return job
 
 
@@ -77,6 +79,18 @@ async def stop_crawl(tenant_id: UUID, job_id: UUID) -> None:
         _cancel_requested.add(job_id)
 
 
+async def delete_crawl(tenant_id: UUID, job_id: UUID) -> None:
+    """Stop if running, delete Qdrant vectors, then delete all job records."""
+    import storage.qdrant as qdrant_store
+    job = await jobs_store.get_job(tenant_id, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status in ("pending", "running"):
+        _cancel_requested.add(job_id)
+    await qdrant_store.delete_vectors_by_crawl_job(tenant_id, job_id)
+    await pg_store.delete_crawl_job(tenant_id, job_id)
+
+
 async def _fetch_robots(robots_url: str):
     """Fetch and parse robots.txt in a thread to avoid blocking the event loop."""
     import urllib.robotparser
@@ -93,7 +107,7 @@ async def _fetch_robots(robots_url: str):
     return await asyncio.to_thread(_read)
 
 
-async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: int) -> None:
+async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: int, crawl_delay: float = 0.0) -> None:
     """Background task: BFS crawl from seed_url, store pages, update job progress."""
     try:
         await jobs_store.update_job_status(
@@ -167,6 +181,9 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
                     "running",
                     progress={"pages_crawled": pages_crawled, "pages_total": None},
                 )
+
+                if crawl_delay > 0:
+                    await asyncio.sleep(crawl_delay)
 
                 if "text/html" in content_type:
                     extractor = _LinkExtractor()

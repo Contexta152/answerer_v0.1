@@ -37,15 +37,30 @@ async def create_tables() -> None:
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS ls_orders (
-                ls_order_id TEXT PRIMARY KEY,
-                tenant_id   UUID NOT NULL,
-                email       TEXT NOT NULL,
-                name        TEXT,
-                variant_id  TEXT,
-                plan        TEXT,
-                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            CREATE TABLE IF NOT EXISTS orders (
+                ls_order_id      TEXT PRIMARY KEY,
+                tenant_id        UUID NOT NULL,
+                email            TEXT NOT NULL,
+                name             TEXT,
+                variant_id       TEXT,
+                plan             TEXT,
+                application_name TEXT,
+                created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
+        """)
+        # Migration: add application_name if upgrading from an older schema
+        await conn.execute("""
+            ALTER TABLE ls_orders ADD COLUMN IF NOT EXISTS application_name TEXT
+        """)
+        # Migration: rename ls_orders → orders (covers LS + enterprise variants)
+        await conn.execute("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'ls_orders')
+                   AND NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'orders')
+                THEN
+                    ALTER TABLE ls_orders RENAME TO orders;
+                END IF;
+            END $$
         """)
 
 
@@ -144,25 +159,46 @@ async def upsert_tenant_quota(
     return dict(row)
 
 
-async def get_tenant_emails() -> dict:
-    """Return {tenant_id_str: email} for all known ls_orders."""
+async def get_tenant_order_info() -> dict:
+    """Return {tenant_id_str: {email, application_name, created_at}} for all known orders."""
     pool = await _get_pool()
-    rows = await pool.fetch("SELECT tenant_id, email FROM ls_orders")
-    return {str(r["tenant_id"]): r["email"] for r in rows}
+    rows = await pool.fetch("SELECT tenant_id, email, application_name, created_at FROM orders")
+    return {
+        str(r["tenant_id"]): {
+            "email": r["email"],
+            "application_name": r["application_name"],
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    }
 
 
-async def get_ls_order(ls_order_id: str) -> Optional[dict]:
+async def get_orders() -> list[dict]:
     pool = await _get_pool()
-    row = await pool.fetchrow("SELECT ls_order_id, tenant_id FROM ls_orders WHERE ls_order_id = $1", ls_order_id)
+    rows = await pool.fetch(
+        "SELECT ls_order_id, tenant_id, email, name, plan, application_name, created_at FROM orders ORDER BY created_at DESC"
+    )
+    return [dict(r) for r in rows]
+
+
+async def get_order(order_id: str) -> Optional[dict]:
+    pool = await _get_pool()
+    row = await pool.fetchrow("SELECT ls_order_id, tenant_id FROM orders WHERE ls_order_id = $1", order_id)
     return dict(row) if row else None
 
 
-async def insert_ls_order(ls_order_id: str, tenant_id: UUID, email: str, name: Optional[str], variant_id: Optional[str], plan: Optional[str]) -> None:
+async def insert_order(order_id: str, tenant_id: UUID, email: str, name: Optional[str], variant_id: Optional[str], plan: Optional[str], application_name: Optional[str] = None) -> None:
     pool = await _get_pool()
     await pool.execute(
-        "INSERT INTO ls_orders (ls_order_id, tenant_id, email, name, variant_id, plan) VALUES ($1, $2, $3, $4, $5, $6)",
-        ls_order_id, tenant_id, email, name, variant_id, plan,
+        "INSERT INTO orders (ls_order_id, tenant_id, email, name, variant_id, plan, application_name) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        order_id, tenant_id, email, name, variant_id, plan, application_name,
     )
+
+
+async def delete_tenant_quota(tenant_id: UUID) -> None:
+    """Remove vendor-console quota record for a tenant. Orders are preserved."""
+    pool = await _get_pool()
+    await pool.execute("DELETE FROM tenant_quotas WHERE tenant_id = $1", tenant_id)
 
 
 async def list_tenant_quotas() -> list[dict]:

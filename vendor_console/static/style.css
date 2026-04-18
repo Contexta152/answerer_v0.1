@@ -260,8 +260,8 @@ body {
   --border:       #dde3ea;
   --border-hi:    #c4cdd8;
   --text:         #0f172a;
-  --text-sub:     #5a6a82;
-  --text-dim:     #8fa0b8;
+  --text-sub:     #334155;
+  --text-dim:     #475569;
   /* keep accent colours but darken for light-bg legibility */
   --accent-text:  #2563eb;
   --danger:       #dc2626;
@@ -589,6 +589,7 @@ td {
   padding:        11px 14px;
   border-bottom:  1px solid var(--border);
   vertical-align: middle;
+  color:          var(--text);
 }
 
 tr:last-child td              { border-bottom: none; }
@@ -622,6 +623,33 @@ tbody tr.summary-row:hover td { background: var(--surface-hi); }
   text-align:           right;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Tenant cell ───────────────────────────────────────────────────────── */
+
+.tenant-name  { font-weight: 600; color: var(--text); font-size: .875rem; }
+
+.tenant-app-name {
+  font-size:      .78rem;
+  font-weight:    600;
+  color:          var(--accent-text);
+  margin-top:     2px;
+}
+
+.tenant-email {
+  font-size:  .75rem;
+  color:      var(--text-sub);
+  margin-top: 2px;
+}
+
+.tenant-id {
+  font-size:  .7rem;
+  color:      var(--text-dim);
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+.created-col  { color: var(--text-sub); font-size: .78rem; }
+.order-id-col { white-space: nowrap; }
 
 /* ── Quota edit ────────────────────────────────────────────────────────── */
 

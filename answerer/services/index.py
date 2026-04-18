@@ -113,7 +113,11 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
                     {
                         "id": str(uuid.uuid4()),
                         "vector": embedding,
-                        "payload": {"source": page["url"], "text": chunk},
+                        "payload": {
+                            "source": page["url"],
+                            "text": chunk,
+                            "crawl_job_id": str(crawl_job_id),
+                        },
                     }
                     for chunk, embedding in zip(chunks, embeddings)
                 ]

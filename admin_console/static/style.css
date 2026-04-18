@@ -19,7 +19,7 @@
   /* ── Text ── */
   --text:          #0f1629;
   --text-secondary:#4b5675;
-  --text-muted:    #8b93a8;
+  --text-muted:    #5e6b87;
 
   /* ── Status ── */
   --success:       #10b981;
@@ -394,6 +394,7 @@ body {
 .form-row .form-group { flex: 1; min-width: 160px; }
 
 input[type=text],
+input[type=url],
 input[type=email],
 input[type=password],
 input[type=number],
@@ -662,7 +663,36 @@ tr.active-row td { background: var(--brand-light); border-bottom-color: var(--br
   margin-top: 4px;
 }
 
-/* ══ QUICK DATE BUTTONS ══════════════════════════════════════════════════════ */
+/* ══ PERIOD PILLS ════════════════════════════════════════════════════════════ */
+.period-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.period-pill {
+  padding: 5px 16px;
+  font-family: var(--sans);
+  font-size: .8rem;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background .15s, border-color .15s, color .15s;
+}
+.period-pill:hover, .period-pill.active {
+  background: var(--brand-light);
+  border-color: var(--brand-border);
+  color: var(--brand);
+}
+.custom-range {
+  margin-bottom: 12px;
+}
+
+/* ══ QUICK DATE BUTTONS (legacy) ════════════════════════════════════════════ */
 .quick-btns {
   display: flex;
   gap: 6px;
@@ -693,7 +723,7 @@ tr.active-row td { background: var(--brand-light); border-bottom-color: var(--br
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 10px;
-  margin-top: 10px;
+  margin-top: 10px; /* default spacing; override with .progress-grid-mt if needed */
 }
 .progress-cell {
   background: var(--surface-2);
@@ -728,9 +758,10 @@ tr.active-row td { background: var(--brand-light); border-bottom-color: var(--br
 /* ══ KB CARD ═════════════════════════════════════════════════════════════════ */
 .kb-card {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -743,5 +774,56 @@ tr.active-row td { background: var(--brand-light); border-bottom-color: var(--br
 .kb-card.disabled { opacity: .6; }
 .kb-card-main { flex: 1; min-width: 0; }
 .kb-name { font-family: var(--mono); font-size: .78rem; font-weight: 600; color: var(--text); margin-bottom: 2px; }
-.kb-url { font-size: .7rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kb-url { font-family: var(--mono); font-size: .7rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kb-state-label { font-family: var(--mono); font-size: .64rem; color: var(--text-muted); width: 52px; text-align: center; }
+
+/* ══ WIDGET KEY ══════════════════════════════════════════════════════════════ */
+.blur-reveal { filter: blur(4px); cursor: pointer; user-select: none; }
+
+/* ══ FORM HELPERS ════════════════════════════════════════════════════════════ */
+.form-group-wide { flex: 2; }
+.form-msg        { margin-top: 10px; }
+.kbs-btn-wrap    { text-align: center; margin-top: 4px; }
+.create-msg      { margin-top: 10px; font-size: .85rem; text-align: center; }
+.section-content { margin-top: 20px; }
+.search-msg      { margin-top: 8px; font-size: .85rem; }
+
+/* ══ BUTTON HELPERS ══════════════════════════════════════════════════════════ */
+.btn-row-mt        { margin-top: 16px; }
+.card-no-mb        { margin-bottom: 0; }
+.card-title .badge { margin-left: 8px; }
+
+/* ══ TEST QUERY ══════════════════════════════════════════════════════════════ */
+.threshold-summary { font-size: .83rem; color: var(--text-muted); margin-top: 6px; }
+.llm-msg           { margin-left: 10px; font-size: .85rem; }
+.answer-text       { white-space: pre-wrap; line-height: 1.6; font-size: .9rem; color: var(--text); }
+
+/* ══ KB CARD INNER ELEMENTS ══════════════════════════════════════════��═══════ */
+.kbs-count-label { font-size: .8rem; color: var(--text-muted); margin-bottom: 12px; }
+.kb-card-heading { font-size: .95rem; font-weight: 700; color: var(--text); }
+.kb-status-row   { display: flex; align-items: center; gap: 8px; font-size: .82rem; margin-top: 8px; }
+.kb-index-row    { display: flex; align-items: center; gap: 8px; font-size: .82rem; margin-top: 5px; }
+.kb-tokens-label { font-size: .78rem; color: var(--text-muted); margin-top: 5px; }
+.kb-actions      { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.kb-msg          { font-size: .83rem; margin-top: 6px; }
+.kb-error-text   { color: var(--error); font-size: .75rem; }
+
+/* ══ TABLE CELL HELPERS ══════════════════════════════════════════════════════ */
+.cell-question { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell-q        { max-width: 220px; }
+.cell-a        { max-width: 260px; }
+.row-msg       { font-size: .82rem; margin-top: 4px; }
+
+/* ══ DETAIL PANEL HELPERS ════════════════════════════════════════════════════ */
+.detail-label-spaced { margin-bottom: 6px; }
+.detail-grid-mb      { margin-bottom: 10px; }
+
+/* ══ RAW JSON / ANALYTICS ════════════════════════════════════════════════════ */
+.details-raw         { margin-top: 12px; }
+.details-raw summary { cursor: pointer; font-size: .78rem; color: var(--text-muted); list-style: none; }
+.raw-json            { font-family: var(--mono); font-size: .78rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; overflow-x: auto; margin-top: 8px; white-space: pre; }
+
+/* ══ CHUNK DISPLAY ═══════════════════════════════════════════════════════════ */
+.chunk-dimmed           { opacity: .35; }
+.chunk-mini-head .mono  { font-size: .78rem; }
+.chunk-mini-head .muted { font-size: .75rem; }

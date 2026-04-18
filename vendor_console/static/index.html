@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vendor Console</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
 
@@ -31,7 +31,8 @@
 
     <nav id="sidebar-nav">
       <div class="nav-section">Management</div>
-      <button class="nav-item active" data-tab="tenants">Tenants</button>
+      <button class="nav-item active" data-tab="orders">Orders</button>
+      <button class="nav-item" data-tab="tenants">Tenants</button>
     </nav>
 
     <div class="sidebar-footer">
@@ -48,14 +49,33 @@
 
   <main id="main-content">
 
+    <!-- ORDERS ───────────────────────────────────────────────────────────── -->
+    <div id="tab-orders" class="tab-panel active">
+      <div class="page-header">
+        <div>
+          <h1>Orders</h1>
+          <p>Every order, whether from checkout or created manually.</p>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <button class="btn btn-primary btn-sm" id="new-order-btn">+ New Order</button>
+          <button class="btn btn-secondary btn-sm" id="refresh-btn">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="orders-wrap" class="card card-flush">
+        <div class="loading">Loading…</div>
+      </div>
+    </div>
+
     <!-- TENANTS ──────────────────────────────────────────────────────────── -->
-    <div id="tab-tenants" class="tab-panel active">
+    <div id="tab-tenants" class="tab-panel">
       <div class="page-header">
         <div>
           <h1>Tenants</h1>
           <p>Click any row to expand activity detail.</p>
         </div>
-        <button class="btn btn-secondary btn-sm" id="refresh-btn">↻ Refresh</button>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <button class="btn btn-secondary btn-sm" id="refresh-tenants-btn">↻ Refresh</button>
+        </div>
       </div>
 
       <div id="stat-cards" style="display:none">
@@ -87,11 +107,78 @@
   </main>
 </div>
 
+<!-- ── New Tenant Modal ─────────────────────────────────────────────────── -->
+<div id="new-tenant-overlay" style="display:none;position:fixed;inset:0;z-index:1000;
+     background:rgba(2,7,18,.55);align-items:center;justify-content:center;">
+  <div class="login-card" style="width:460px;max-width:calc(100vw - 32px);position:relative;">
+    <h2 style="font-size:1.1rem;font-weight:800;letter-spacing:-.02em;margin-bottom:24px;">New Enterprise Tenant</h2>
+    <div class="form-group">
+      <label for="nt-name">Company / Tenant Name</label>
+      <input type="text" id="nt-name" placeholder="Acme Corp" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label for="nt-email">Admin Email</label>
+      <input type="email" id="nt-email" placeholder="admin@acme.com" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label for="nt-appname">Application Name</label>
+      <input type="text" id="nt-appname" placeholder="acme-support-bot" autocomplete="off">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="nt-plan">Plan</label>
+        <select id="nt-plan">
+          <option value="starter">Starter (1,000 q)</option>
+          <option value="growth">Growth (10,000 q)</option>
+          <option value="professional">Professional (50,000 q)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="nt-quota">Custom Quota</label>
+        <input type="number" id="nt-quota" min="0" placeholder="auto">
+      </div>
+    </div>
+    <div id="nt-error" class="msg-err" style="min-height:1.4em;margin-bottom:8px;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-secondary btn-sm" id="nt-cancel-btn">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="nt-submit-btn">Create Tenant</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Delete Tenant Modal ───────────────────────────────────────────────── -->
+<div id="delete-tenant-overlay" style="display:none;position:fixed;inset:0;z-index:1000;
+     background:rgba(2,7,18,.55);align-items:center;justify-content:center;">
+  <div class="login-card" style="width:420px;max-width:calc(100vw - 32px);position:relative;">
+    <h2 style="font-size:1.1rem;font-weight:800;letter-spacing:-.02em;margin-bottom:16px;">Delete Tenant</h2>
+    <p>Are you sure you want to delete <strong id="dt-tenant-name"></strong>?</p>
+    <p class="msg-err" style="margin-top:8px;margin-bottom:0;">This permanently deletes all tenant data — knowledge base, questions, and admin users. The order record is preserved.</p>
+    <div id="dt-error" class="msg-err" style="min-height:1.4em;margin-top:8px;margin-bottom:0;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn btn-secondary btn-sm" id="dt-cancel-btn">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="dt-confirm-btn">Delete Tenant</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Success Toast ─────────────────────────────────────────────────────── -->
+<div id="nt-success-banner" style="display:none;position:fixed;bottom:24px;right:24px;
+     z-index:1100;background:var(--surface,#0b1528);border:1px solid var(--border,#1a2d50);
+     border-left:3px solid #4ade80;border-radius:6px;padding:16px 20px;max-width:380px;
+     font-size:.875rem;">
+  <strong style="color:#4ade80;">Tenant created.</strong>
+  <div id="nt-success-text" style="margin-top:6px;word-break:break-all;"></div>
+  <button onclick="document.getElementById('nt-success-banner').style.display='none'"
+          style="position:absolute;top:8px;right:12px;background:none;border:none;
+                 cursor:pointer;font-size:1rem;color:var(--text-dim);">×</button>
+</div>
+
 <script>
 const BASE = '';
 const ADMIN_CONSOLE_URL = 'https://admin-console-848760828618.us-central1.run.app';
 
 let accessToken = null;
+let currentTab  = 'orders';
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -100,6 +187,27 @@ function esc(s) {
 }
 
 function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—'; }
+
+function fmtDateShort(s) {
+  if (!s) return '—';
+  const d = new Date(s);
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────────
+
+function showTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${tab}`));
+  if (tab === 'orders') loadOrders();
+  else if (tab === 'tenants') loadTenants();
+}
+
+document.getElementById('sidebar-nav').addEventListener('click', e => {
+  const btn = e.target.closest('.nav-item');
+  if (btn && btn.dataset.tab) showTab(btn.dataset.tab);
+});
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -127,7 +235,7 @@ async function login() {
     document.getElementById('user-avatar').textContent  = initials;
     document.getElementById('login-screen').style.display  = 'none';
     document.getElementById('app-shell').removeAttribute('hidden');
-    loadTenants();
+    showTab('orders');
   } catch(e) {
     document.getElementById('login-error').textContent = 'Network error';
   } finally {
@@ -150,7 +258,88 @@ async function logout() {
 document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 document.getElementById('login-btn').addEventListener('click', login);
 document.getElementById('logout-btn').addEventListener('click', logout);
-document.getElementById('refresh-btn').addEventListener('click', loadTenants);
+document.getElementById('refresh-btn').addEventListener('click', () => {
+  if (currentTab === 'orders') loadOrders();
+  else loadTenants();
+});
+document.getElementById('refresh-tenants-btn').addEventListener('click', loadTenants);
+
+// ── Orders ────────────────────────────────────────────────────────────────────
+
+async function loadOrders() {
+  const wrap = document.getElementById('orders-wrap');
+  wrap.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const res = await fetch(`${BASE}/v1/orders`, {
+      headers: {'Authorization': `Bearer ${accessToken}`},
+    });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    renderOrders(data.orders || []);
+  } catch(e) {
+    wrap.innerHTML = '<div class="msg-err loading">Failed to load orders.</div>';
+  }
+}
+
+function renderOrders(orders) {
+  const wrap = document.getElementById('orders-wrap');
+  if (!orders.length) {
+    wrap.innerHTML = '<div class="empty-state">No orders yet.</div>'; return;
+  }
+  const rows = orders.map(o => {
+    const shortId = esc((o.ls_order_id || '').slice(0, 12));
+    const fullId  = esc(o.ls_order_id || '');
+    const tenantLink = o.tenant_id
+      ? `<button class="btn btn-secondary btn-sm" data-action="open-admin" data-id="${esc(o.tenant_id)}">Open ↗</button>`
+      : '—';
+    return `
+      <tr>
+        <td class="order-id-col mono" title="${fullId}">${shortId}</td>
+        <td>${esc(o.name || '—')}</td>
+        <td>${esc(o.email || '—')}</td>
+        <td>${esc(o.plan || '—')}</td>
+        <td>${esc(o.application_name || '—')}</td>
+        <td><span class="mono" style="font-size:.75rem">${esc(o.tenant_id || '—')}</span></td>
+        <td class="nowrap">${fmtDateShort(o.created_at)}</td>
+        <td>${tenantLink}</td>
+      </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th class="order-id-col">Order ID</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Plan</th>
+          <th>Application</th>
+          <th>Tenant ID</th>
+          <th>Created</th>
+          <th>Admin Console</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+}
+
+document.getElementById('orders-wrap').addEventListener('click', async e => {
+  const openBtn = e.target.closest('[data-action="open-admin"]');
+  if (!openBtn) return;
+  const tid = openBtn.dataset.id;
+  openBtn.disabled = true;
+  try {
+    const res = await fetch(`${BASE}/v1/internal/impersonate/${tid}`, {
+      method: 'POST', headers: {'Authorization': `Bearer ${accessToken}`}
+    });
+    const d = await res.json();
+    if (res.ok) window.open(`${ADMIN_CONSOLE_URL}?token=${d.access_token}`, '_blank');
+    else alert('Failed to open admin console: ' + (d.detail || 'unknown error'));
+  } catch(e) { alert('Network error'); }
+  finally { openBtn.disabled = false; }
+});
 
 // ── Tenants ───────────────────────────────────────────────────────────────────
 
@@ -202,13 +391,18 @@ function renderTable(tenants) {
       : '<span class="badge badge-green">Active</span>';
     const src = t.source_breakdown_7d || {};
 
+    const appNameHtml = t.application_name
+      ? `<div class="tenant-app-name">${esc(t.application_name)}</div>`
+      : '';
+
     return `
       <tr class="summary-row" data-id="${t.tenant_id}">
         <td><button class="expand-btn" data-id="${t.tenant_id}" title="Expand">▶</button></td>
         <td>
-          <strong>${esc(t.name)}</strong>
-          ${t.email ? `<div class="muted small">${esc(t.email)}</div>` : ''}
-          <div class="mono muted small">${esc(t.tenant_id)}</div>
+          <div class="tenant-name">${esc(t.name)}</div>
+          ${appNameHtml}
+          ${t.email ? `<div class="tenant-email">${esc(t.email)}</div>` : ''}
+          <div class="tenant-id mono">${esc(t.tenant_id)}</div>
         </td>
         <td>${badge}</td>
         <td>${esc(t.plan || '—')}</td>
@@ -225,12 +419,16 @@ function renderTable(tenants) {
           </div>
         </td>
         <td class="nowrap">${t.questions_7d} / ${t.questions_30d}</td>
+        <td class="nowrap created-col">${fmtDateShort(t.created)}</td>
         <td>
           <button class="btn btn-secondary btn-sm" data-action="open-admin" data-id="${t.tenant_id}">Open ↗</button>
         </td>
+        <td>
+          <button class="btn btn-danger btn-sm" data-action="delete-tenant" data-id="${t.tenant_id}" data-name="${esc(t.name)}">Delete</button>
+        </td>
       </tr>
       <tr class="detail-row hidden" id="detail-${t.tenant_id}">
-        <td colspan="8">
+        <td colspan="10">
           <div class="detail-panel">
             <div class="detail-cell">
               <div class="detail-cell-label">Sources — 7 days</div>
@@ -246,8 +444,6 @@ function renderTable(tenants) {
             <div class="detail-cell">
               <div class="detail-cell-label">Error rate — 7 days</div>
               <div class="detail-cell-value">${t.error_rate_7d_pct != null ? t.error_rate_7d_pct.toFixed(1) + '%' : '—'}</div>
-            </div>
-            <div class="detail-cell">
               <div class="detail-cell-label">Avg response — 7 days</div>
               <div class="detail-cell-value">${t.avg_response_ms_7d != null ? t.avg_response_ms_7d + ' ms' : '—'}</div>
             </div>
@@ -256,6 +452,12 @@ function renderTable(tenants) {
               <div class="detail-cell-value small">${fmtDate(t.last_question_at)}</div>
               <div class="detail-cell-label">Last indexed</div>
               <div class="detail-cell-value small">${fmtDate(t.last_indexed_at)}</div>
+            </div>
+            <div class="detail-cell">
+              <div class="detail-cell-label">Tenant ID</div>
+              <div class="detail-cell-value mono small">${esc(t.tenant_id)}</div>
+              <div class="detail-cell-label">Signed up</div>
+              <div class="detail-cell-value small">${fmtDate(t.created)}</div>
             </div>
           </div>
         </td>
@@ -274,7 +476,9 @@ function renderTable(tenants) {
           <th>Quota used</th>
           <th>Quota limit</th>
           <th>Q 7d / 30d</th>
+          <th>Created</th>
           <th>Admin Console</th>
+          <th>Delete</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -309,6 +513,14 @@ document.getElementById('table-wrap').addEventListener('click', async e => {
     return;
   }
 
+  // Delete tenant
+  const deleteBtn = e.target.closest('[data-action="delete-tenant"]');
+  if (deleteBtn) {
+    e.stopPropagation();
+    openDeleteModal(deleteBtn.dataset.id, deleteBtn.dataset.name);
+    return;
+  }
+
   // Expand row — click anywhere on summary row
   const row = e.target.closest('.summary-row');
   if (!row) return;
@@ -320,6 +532,139 @@ document.getElementById('table-wrap').addEventListener('click', async e => {
   const isOpen = !detailRow.classList.contains('hidden');
   detailRow.classList.toggle('hidden', isOpen);
   btn.textContent = isOpen ? '▶' : '▼';
+});
+
+// ── Save quota ────────────────────────────────────────────────────────────────
+
+// ── New Tenant Modal ──────────────────────────────────────────────────────
+
+const PLAN_QUOTAS = { starter: 1000, growth: 10000, professional: 50000 };
+
+function openNewTenantModal() {
+  document.getElementById('nt-name').value    = '';
+  document.getElementById('nt-email').value   = '';
+  document.getElementById('nt-appname').value = '';
+  document.getElementById('nt-plan').value    = 'starter';
+  document.getElementById('nt-quota').value   = PLAN_QUOTAS['starter'];
+  document.getElementById('nt-error').textContent = '';
+  const btn = document.getElementById('nt-submit-btn');
+  btn.disabled = false; btn.textContent = 'Create Tenant';
+  document.getElementById('new-tenant-overlay').style.display = 'flex';
+  document.getElementById('nt-name').focus();
+}
+
+function closeNewTenantModal() {
+  document.getElementById('new-tenant-overlay').style.display = 'none';
+}
+
+document.getElementById('nt-plan').addEventListener('change', function () {
+  document.getElementById('nt-quota').value = PLAN_QUOTAS[this.value] || '';
+});
+
+document.getElementById('new-tenant-overlay').addEventListener('click', function (e) {
+  if (e.target === this) closeNewTenantModal();
+});
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    if (document.getElementById('new-tenant-overlay').style.display === 'flex') closeNewTenantModal();
+    if (document.getElementById('delete-tenant-overlay').style.display === 'flex') closeDeleteModal();
+  }
+});
+
+document.getElementById('new-order-btn').addEventListener('click', openNewTenantModal);
+document.getElementById('nt-cancel-btn').addEventListener('click', closeNewTenantModal);
+
+document.getElementById('nt-submit-btn').addEventListener('click', async function () {
+  const name     = document.getElementById('nt-name').value.trim();
+  const email    = document.getElementById('nt-email').value.trim();
+  const appname  = document.getElementById('nt-appname').value.trim();
+  const plan     = document.getElementById('nt-plan').value;
+  const quotaRaw = document.getElementById('nt-quota').value.trim();
+  const quota    = quotaRaw === '' ? null : parseInt(quotaRaw, 10);
+  const errEl    = document.getElementById('nt-error');
+  errEl.textContent = '';
+
+  if (!name)    { errEl.textContent = 'Name is required.'; return; }
+  if (!email || !email.includes('@')) { errEl.textContent = 'Valid email is required.'; return; }
+  if (!appname) { errEl.textContent = 'Application name is required.'; return; }
+  if (quota !== null && (isNaN(quota) || quota < 0)) { errEl.textContent = 'Quota must be a non-negative number.'; return; }
+
+  this.disabled = true; this.textContent = 'Creating…';
+
+  try {
+    const res = await fetch(`${BASE}/v1/tenants`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, application_name: appname, plan, questions_quota: quota }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.detail || 'Creation failed.';
+      this.disabled = false; this.textContent = 'Create Tenant';
+      return;
+    }
+    closeNewTenantModal();
+    document.getElementById('nt-success-text').innerHTML =
+      `Tenant ID: <span style="font-family:monospace">${esc(data.tenant_id)}</span><br>` +
+      `Temp password: <strong>${esc(data.temp_password || '—')}</strong>`;
+    const banner = document.getElementById('nt-success-banner');
+    banner.style.display = 'block';
+    setTimeout(() => { banner.style.display = 'none'; }, 30000);
+    await loadOrders();
+  } catch (_) {
+    errEl.textContent = 'Network error. Please try again.';
+    this.disabled = false; this.textContent = 'Create Tenant';
+  }
+});
+
+// ── Delete Tenant Modal ───────────────────────────────────────────────────────
+
+let _deleteTenantId = null;
+
+function openDeleteModal(tenantId, tenantName) {
+  _deleteTenantId = tenantId;
+  document.getElementById('dt-tenant-name').textContent = tenantName;
+  document.getElementById('dt-error').textContent = '';
+  const btn = document.getElementById('dt-confirm-btn');
+  btn.disabled = false; btn.textContent = 'Delete Tenant';
+  document.getElementById('delete-tenant-overlay').style.display = 'flex';
+}
+
+function closeDeleteModal() {
+  document.getElementById('delete-tenant-overlay').style.display = 'none';
+  _deleteTenantId = null;
+}
+
+document.getElementById('delete-tenant-overlay').addEventListener('click', function (e) {
+  if (e.target === this) closeDeleteModal();
+});
+
+document.getElementById('dt-cancel-btn').addEventListener('click', closeDeleteModal);
+
+document.getElementById('dt-confirm-btn').addEventListener('click', async function () {
+  if (!_deleteTenantId) return;
+  const errEl = document.getElementById('dt-error');
+  errEl.textContent = '';
+  this.disabled = true; this.textContent = 'Deleting…';
+  try {
+    const res = await fetch(`${BASE}/v1/tenants/${_deleteTenantId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+    if (res.status === 204 || res.ok) {
+      closeDeleteModal();
+      await loadTenants();
+    } else {
+      let detail = 'Delete failed.';
+      try { const d = await res.json(); detail = d.detail || detail; } catch (_) {}
+      errEl.textContent = detail;
+      this.disabled = false; this.textContent = 'Delete Tenant';
+    }
+  } catch (_) {
+    errEl.textContent = 'Network error. Please try again.';
+    this.disabled = false; this.textContent = 'Delete Tenant';
+  }
 });
 
 // ── Save quota ────────────────────────────────────────────────────────────────

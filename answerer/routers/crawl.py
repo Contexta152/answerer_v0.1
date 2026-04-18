@@ -18,6 +18,8 @@ router = APIRouter()
 class _CrawlRequest(BaseModel):
     url: str
     max_pages: int = 500
+    name: Optional[str] = None
+    crawl_delay: float = 0.0
 
 
 async def _require_service_or_admin(
@@ -51,6 +53,10 @@ async def list_crawls(
     from storage import postgres as pg_store
     rows = await pg_store.get_crawl_jobs(tenant_id)
     import json as _json
+
+    def _iso(v):
+        return v.isoformat() if v is not None else None
+
     items = []
     for r in rows:
         progress = None
@@ -63,10 +69,16 @@ async def list_crawls(
             "job_id": str(r["job_id"]),
             "url": r["url"],
             "status": r["status"],
-            "created": r["created"].isoformat(),
+            "created": _iso(r["created"]),
+            "completed": _iso(r.get("completed")),
             "progress": progress,
             "error": r["error"],
             "embed_tokens": r.get("embed_tokens"),
+            "pages_indexed": r.get("pages_indexed"),
+            "index_job_id": str(r["index_job_id"]) if r.get("index_job_id") else None,
+            "index_status": r.get("index_status"),
+            "index_completed": _iso(r.get("index_completed")),
+            "name": r.get("name"),
         })
     return {"items": items}
 
@@ -79,7 +91,7 @@ async def start_crawl(
     _: None = Depends(_require_service_or_admin),
 ) -> Job:
     return await crawl_service.start_crawl(
-        tenant_id, body.url, body.max_pages, background_tasks
+        tenant_id, body.url, body.max_pages, background_tasks, name=body.name, crawl_delay=body.crawl_delay
     )
 
 
@@ -93,9 +105,9 @@ async def get_crawl_status(
 
 
 @router.delete("/v1/tenants/{tenant_id}/crawl/{job_id}", status_code=204)
-async def stop_crawl(
+async def delete_crawl(
     tenant_id: UUID,
     job_id: UUID,
     _: None = Depends(_require_service_or_admin),
 ) -> None:
-    await crawl_service.stop_crawl(tenant_id, job_id)
+    await crawl_service.delete_crawl(tenant_id, job_id)
