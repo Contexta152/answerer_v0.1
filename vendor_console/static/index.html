@@ -146,6 +146,22 @@
   </div>
 </div>
 
+<!-- ── Reset Password Modal ──────────────────────────────────────────────── -->
+<div id="reset-pwd-overlay" style="display:none;position:fixed;inset:0;z-index:1000;
+     background:rgba(2,7,18,.55);align-items:center;justify-content:center;">
+  <div class="login-card" style="width:440px;max-width:calc(100vw - 32px);position:relative;">
+    <h2 style="font-size:1.1rem;font-weight:800;letter-spacing:-.02em;margin-bottom:16px;">Password Reset</h2>
+    <p style="margin-bottom:12px;">A new temporary password has been generated for <strong id="rp-email"></strong>. Share it securely — it will not be shown again.</p>
+    <div style="background:var(--bg,#060e1e);border:1px solid var(--border,#1a2d50);border-radius:8px;padding:12px 14px;font-family:monospace;font-size:.95rem;letter-spacing:.02em;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <span id="rp-password"></span>
+      <button class="btn btn-secondary btn-sm" id="rp-copy-btn" style="flex-shrink:0;">Copy</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:20px;">
+      <button class="btn btn-primary btn-sm" id="rp-close-btn">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Delete Tenant Modal ───────────────────────────────────────────────── -->
 <div id="delete-tenant-overlay" style="display:none;position:fixed;inset:0;z-index:1000;
      background:rgba(2,7,18,.55);align-items:center;justify-content:center;">
@@ -424,6 +440,9 @@ function renderTable(tenants) {
           <button class="btn btn-secondary btn-sm" data-action="open-admin" data-id="${t.tenant_id}">Open ↗</button>
         </td>
         <td>
+          <button class="btn btn-secondary btn-sm" data-action="reset-password" data-id="${t.tenant_id}">Reset pwd</button>
+        </td>
+        <td>
           <button class="btn btn-danger btn-sm" data-action="delete-tenant" data-id="${t.tenant_id}" data-name="${esc(t.name)}">Delete</button>
         </td>
       </tr>
@@ -478,6 +497,7 @@ function renderTable(tenants) {
           <th>Q 7d / 30d</th>
           <th>Created</th>
           <th>Admin Console</th>
+          <th>Password</th>
           <th>Delete</th>
         </tr>
       </thead>
@@ -510,6 +530,24 @@ document.getElementById('table-wrap').addEventListener('click', async e => {
   const saveBtn = e.target.closest('[data-action="save-quota"]');
   if (saveBtn) {
     await saveQuota(saveBtn.dataset.id, saveBtn);
+    return;
+  }
+
+  // Reset password
+  const resetBtn = e.target.closest('[data-action="reset-password"]');
+  if (resetBtn) {
+    e.stopPropagation();
+    const tid = resetBtn.dataset.id;
+    resetBtn.disabled = true; resetBtn.textContent = '…';
+    try {
+      const res = await fetch(`${BASE}/v1/tenants/${tid}/reset-password`, {
+        method: 'POST', headers: {'Authorization': `Bearer ${accessToken}`}
+      });
+      const d = await res.json();
+      if (res.ok) openPasswordModal(d.email, d.temp_password);
+      else alert('Reset failed: ' + (d.detail || 'unknown error'));
+    } catch(err) { alert('Network error'); }
+    finally { resetBtn.disabled = false; resetBtn.textContent = 'Reset pwd'; }
     return;
   }
 
@@ -569,6 +607,7 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
     if (document.getElementById('new-tenant-overlay').style.display === 'flex') closeNewTenantModal();
     if (document.getElementById('delete-tenant-overlay').style.display === 'flex') closeDeleteModal();
+    if (document.getElementById('reset-pwd-overlay').style.display === 'flex') document.getElementById('reset-pwd-overlay').style.display = 'none';
   }
 });
 
@@ -635,6 +674,28 @@ function closeDeleteModal() {
   document.getElementById('delete-tenant-overlay').style.display = 'none';
   _deleteTenantId = null;
 }
+
+function openPasswordModal(email, password) {
+  document.getElementById('rp-email').textContent    = email;
+  document.getElementById('rp-password').textContent = password;
+  document.getElementById('rp-copy-btn').textContent = 'Copy';
+  document.getElementById('reset-pwd-overlay').style.display = 'flex';
+}
+
+document.getElementById('rp-close-btn').addEventListener('click', () => {
+  document.getElementById('reset-pwd-overlay').style.display = 'none';
+});
+
+document.getElementById('rp-copy-btn').addEventListener('click', () => {
+  const pwd = document.getElementById('rp-password').textContent;
+  navigator.clipboard.writeText(pwd).then(() => {
+    document.getElementById('rp-copy-btn').textContent = 'Copied!';
+  });
+});
+
+document.getElementById('reset-pwd-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
 
 document.getElementById('delete-tenant-overlay').addEventListener('click', function (e) {
   if (e.target === this) closeDeleteModal();

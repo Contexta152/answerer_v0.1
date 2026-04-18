@@ -74,3 +74,14 @@ async def create_user(_: None = Depends(require_vendor_service_key), body: _Crea
     password_hash = bcrypt.hashpw(temp_password.encode(), bcrypt.gensalt()).decode()
     await postgres.create_user(body.email, password_hash, body.tenant_id)
     return {"email": body.email, "temp_password": temp_password}
+
+
+@router.post("/v1/internal/tenants/{tenant_id}/reset-password")
+async def reset_tenant_password(tenant_id: UUID, _: None = Depends(require_vendor_service_key)):
+    user = await postgres.get_user_by_tenant_id(tenant_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No admin user found for tenant")
+    temp_password = secrets.token_urlsafe(12)
+    password_hash = bcrypt.hashpw(temp_password.encode(), bcrypt.gensalt()).decode()
+    await postgres.update_user_password(user["id"], password_hash)
+    return {"email": user["email"], "temp_password": temp_password}

@@ -48,6 +48,23 @@ async def get_user_by_email(email: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+async def get_user_by_tenant_id(tenant_id: UUID) -> Optional[dict]:
+    pool = await _get_pool()
+    row = await pool.fetchrow(
+        "SELECT id, email, password_hash, tenant_id FROM admin_users WHERE tenant_id = $1",
+        tenant_id,
+    )
+    return dict(row) if row else None
+
+
+async def update_user_password(user_id: UUID, password_hash: str) -> None:
+    pool = await _get_pool()
+    await pool.execute(
+        "UPDATE admin_users SET password_hash = $1 WHERE id = $2",
+        password_hash, user_id,
+    )
+
+
 async def get_user_by_id(user_id: UUID) -> Optional[dict]:
     pool = await _get_pool()
     row = await pool.fetchrow(
