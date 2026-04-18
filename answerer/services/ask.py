@@ -15,7 +15,7 @@ import storage.postgres as pg
 import storage.qdrant as qdrant_store
 from models import Chunk, QuestionLogEntry, Settings, Timing
 
-_LLM_MODEL = os.environ.get("VERTEX_LLM_MODEL", "gemini-1.5-flash")
+_LLM_MODEL = os.environ.get("VERTEX_LLM_MODEL", "gemini-2.0-flash-001")
 _SYSTEM_PROMPT = (
     "You are a helpful assistant. Answer the user's question using only the "
     "context provided below. If the context does not contain enough information, "
