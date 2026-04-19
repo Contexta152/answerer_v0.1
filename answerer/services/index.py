@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -20,6 +21,27 @@ logger = logging.getLogger(__name__)
 
 _EMBEDDING_MODEL = "text-embedding-004"
 _EMBED_BATCH_SIZE = 20  # Keep total tokens per request well under the 20k limit
+
+_embed_model: "TextEmbeddingModel | None" = None
+_embed_model_lock = asyncio.Lock()
+
+
+async def _get_embed_model() -> "TextEmbeddingModel":
+    global _embed_model
+    if _embed_model is not None:
+        return _embed_model
+    async with _embed_model_lock:
+        if _embed_model is not None:
+            return _embed_model
+        project = os.environ["GOOGLE_CLOUD_PROJECT"]
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+        def _init():
+            vertexai.init(project=project, location=location)
+            return TextEmbeddingModel.from_pretrained(_EMBEDDING_MODEL)
+
+        _embed_model = await asyncio.to_thread(_init)
+        return _embed_model
 
 
 class _TextExtractor(HTMLParser):
@@ -83,30 +105,70 @@ async def start_index(tenant_id: UUID, crawl_job_id: UUID) -> Job:
 
 
 async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> None:
-    """Background task: chunk, embed, and upsert all pages from a crawl job."""
-    await jobs_storage.update_job_status(
-        job_id, "running", started=datetime.now(timezone.utc)
-    )
+    """Worker task: chunk, embed, and upsert all pages from a crawl job."""
     try:
         settings_row = await postgres.get_settings(tenant_id)
         settings = Settings(**(settings_row or {}))
 
-        pages = await jobs_storage.get_crawl_pages(crawl_job_id, tenant_id)
-        pages_total = len(pages)
+        pages_total = await postgres.count_crawl_pages(crawl_job_id, tenant_id)
 
         total_chunks_created = 0
         total_vectors_upserted = 0
         total_embed_tokens = 0
         total_embed_batches = 0
         total_pages_failed = 0
+        total_pages_vectorized = 0
+        idx = 0
 
-        for idx, page in enumerate(pages, start=1):
+        async for page in jobs_storage.iter_crawl_pages(crawl_job_id, tenant_id):
+            idx += 1
+            if await jobs_storage.is_cancel_requested(job_id):
+                logger.info("Vectorize job %s cancelled after %d pages", job_id, idx - 1)
+                await jobs_storage.update_job_status(
+                    job_id, "failed",
+                    error="Stopped by user",
+                    completed=datetime.now(timezone.utc),
+                )
+                return
+
             try:
                 text = _extract_text(page["content"])
                 chunks = _chunk_text(text, settings.chunk_size, settings.chunk_overlap)
-                if not chunks:
-                    continue
+            except Exception as page_exc:
+                logger.warning("Failed to extract/chunk page %s: %s", page.get("url"), page_exc)
+                total_pages_failed += 1
+                await jobs_storage.update_job_status(
+                    job_id, "running",
+                    progress={
+                        "pages_indexed": idx,
+                        "pages_vectorized": total_pages_vectorized,
+                        "pages_total": pages_total,
+                        "chunks_created": total_chunks_created,
+                        "vectors_upserted": total_vectors_upserted,
+                        "embed_tokens": total_embed_tokens,
+                        "embed_batches": total_embed_batches,
+                        "pages_failed": total_pages_failed,
+                    },
+                )
+                continue
 
+            if not chunks:
+                await jobs_storage.update_job_status(
+                    job_id, "running",
+                    progress={
+                        "pages_indexed": idx,
+                        "pages_vectorized": total_pages_vectorized,
+                        "pages_total": pages_total,
+                        "chunks_created": total_chunks_created,
+                        "vectors_upserted": total_vectors_upserted,
+                        "embed_tokens": total_embed_tokens,
+                        "embed_batches": total_embed_batches,
+                        "pages_failed": total_pages_failed,
+                    },
+                )
+                continue
+
+            try:
                 embeddings, batch_tokens, batch_count = await _embed_texts(tenant_id, chunks)
 
                 vectors = [
@@ -127,8 +189,9 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
                 total_vectors_upserted += len(vectors)
                 total_embed_tokens += batch_tokens
                 total_embed_batches += batch_count
+                total_pages_vectorized += 1
             except Exception as page_exc:
-                logger.warning("Failed to index page %s: %s", page.get("url"), page_exc)
+                logger.warning("Failed to embed/upsert page %s: %s", page.get("url"), page_exc)
                 total_pages_failed += 1
 
             await jobs_storage.update_job_status(
@@ -136,6 +199,7 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
                 "running",
                 progress={
                     "pages_indexed": idx,
+                    "pages_vectorized": total_pages_vectorized,
                     "pages_total": pages_total,
                     "chunks_created": total_chunks_created,
                     "vectors_upserted": total_vectors_upserted,
@@ -151,6 +215,7 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
             completed=datetime.now(timezone.utc),
             progress={
                 "pages_indexed": pages_total,
+                "pages_vectorized": total_pages_vectorized,
                 "pages_total": pages_total,
                 "chunks_created": total_chunks_created,
                 "vectors_upserted": total_vectors_upserted,
@@ -162,6 +227,14 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
     except Exception as exc:
         logger.exception("Index job %s failed for tenant %s", job_id, tenant_id)
         await jobs_storage.update_job_status(job_id, "failed", error=str(exc))
+
+
+async def stop_index(tenant_id: UUID, job_id: UUID) -> None:
+    job = await jobs_storage.get_job(tenant_id, job_id)
+    if job is None:
+        raise KeyError("index_job_not_found")
+    if job.status in ("pending", "running"):
+        await jobs_storage.request_cancel(job_id)
 
 
 async def get_index_status(tenant_id: UUID, job_id: UUID) -> Job:
@@ -200,12 +273,9 @@ async def _embed_texts(tenant_id: UUID, texts: list[str]) -> tuple[list[list[flo
     total_tokens is the sum of token counts across all batches (0 if unavailable).
     batch_count is the number of Vertex AI API calls made.
     """
-    project = os.environ["GOOGLE_CLOUD_PROJECT"]
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    model = await _get_embed_model()
 
     def _call() -> tuple[list[list[float]], int, int]:
-        vertexai.init(project=project, location=location)
-        model = TextEmbeddingModel.from_pretrained(_EMBEDDING_MODEL)
         results: list[list[float]] = []
         total_tokens = 0
         batch_count = 0
@@ -215,7 +285,20 @@ async def _embed_texts(tenant_id: UUID, texts: list[str]) -> tuple[list[list[flo
                 TextEmbeddingInput(text=t, task_type="RETRIEVAL_DOCUMENT")
                 for t in batch
             ]
-            embeddings = model.get_embeddings(inputs)
+            last_exc: Exception | None = None
+            for attempt in range(5):
+                try:
+                    embeddings = model.get_embeddings(inputs)
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt < 4:
+                        delay = 2 ** attempt
+                        logger.warning("Embed attempt %d failed, retrying in %ds: %s", attempt + 1, delay, exc)
+                        time.sleep(delay)
+            if last_exc is not None:
+                raise last_exc
             batch_count += 1
             for e in embeddings:
                 results.append(e.values)
@@ -223,6 +306,7 @@ async def _embed_texts(tenant_id: UUID, texts: list[str]) -> tuple[list[list[flo
                     total_tokens += e.statistics.token_count
                 except Exception:
                     pass
+            time.sleep(0.5)
         return results, total_tokens, batch_count
 
-    return await asyncio.to_thread(_call)
+    return await asyncio.wait_for(asyncio.to_thread(_call), timeout=120.0)

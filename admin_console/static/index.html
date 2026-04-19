@@ -1187,7 +1187,7 @@ async function refreshKBProgress() {
       }
 
       const vectorizeBtn = document.querySelector(`#kb-card-${kb.job_id} [data-action="kb-vectorize"]`);
-      if (vectorizeBtn) vectorizeBtn.style.display = (kb.status === 'completed' && !kb.index_job_id) ? '' : 'none';
+      if (vectorizeBtn) vectorizeBtn.style.display = (kb.status === 'completed' && (!kb.index_job_id || kb.index_status === 'failed')) ? '' : 'none';
 
       const updateBtn = document.querySelector(`#kb-card-${kb.job_id} [data-action="kb-update"]`);
       if (updateBtn) {
@@ -1244,7 +1244,7 @@ async function loadKBs() {
             </div>
             <div class="kb-header-right">
               <button class="btn btn-warning btn-sm" data-action="kb-stop" data-id="${esc(kb.job_id)}" data-index-id="${esc(kb.index_job_id||'')}" style="${kbIsActive(kb)?'':'display:none'}" title="Stop current job">Stop</button>
-              <button class="btn btn-primary btn-sm" data-action="kb-vectorize" data-id="${esc(kb.job_id)}" style="${(kb.status==='completed'&&!kb.index_job_id)?'':'display:none'}" title="Vectorize crawled pages">Vectorize</button>
+              <button class="btn btn-primary btn-sm" data-action="kb-vectorize" data-id="${esc(kb.job_id)}" style="${(kb.status==='completed'&&(!kb.index_job_id||kb.index_status==='failed'))?'':'display:none'}" title="Vectorize crawled pages">Vectorize</button>
               <button class="btn btn-secondary btn-sm" data-action="kb-update" data-id="${esc(kb.job_id)}" data-url="${esc(kb.url)}" data-name="${esc(displayName)}" data-maxpages="${maxPages||10}" ${canUpdate?'':'disabled'} title="${canUpdate?'Re-crawl and re-vectorize this source':'Crawl must be completed first'}">Update</button>
               <button class="btn btn-danger btn-sm" data-action="kb-delete" data-id="${esc(kb.job_id)}" ${kbIsActive(kb)?'disabled':''} title="${kbIsActive(kb)?'Stop the job before deleting':''}">Delete</button>
             </div>
