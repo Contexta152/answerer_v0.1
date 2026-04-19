@@ -4,7 +4,31 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Console</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='black'/><text x='50' y='68' font-family='sans-serif' font-size='56' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
   <link rel="stylesheet" href="/static/style.css?v=2">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    .an-row{display:flex;gap:16px;flex-wrap:wrap}.an-row .card{flex:1;min-width:260px}
+    .chart-wrap{position:relative;height:260px}.chart-wrap-sm{position:relative;height:160px}
+    .hm-grid{display:grid;grid-template-columns:36px repeat(24,1fr);gap:2px;font-size:10px;overflow-x:auto}
+    .hm-cell{height:13px;border-radius:2px}
+    .hm-label{display:flex;align-items:center;color:var(--muted,#9ca3af);white-space:nowrap}
+    .hm-hour-row{display:contents}.hm-hour-label{color:var(--muted,#9ca3af);text-align:center}
+    .cluster-card{border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:16px;margin-bottom:12px}
+    .cluster-card details summary{cursor:pointer;font-size:13px;color:var(--muted,#6b7280)}
+    .cluster-card details ul{margin:6px 0 0 16px;font-size:13px}
+    .gap-card{border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:14px;margin-bottom:10px}
+    .rec-card{border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:16px;margin-bottom:12px;display:flex;gap:12px;align-items:flex-start}
+    .rec-body{flex:1}.rec-impact{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+    .impact-high{color:#ef4444}.impact-medium{color:#f59e0b}.impact-low{color:#22c55e}
+    .budget-track{background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden;margin:6px 0}
+    .budget-fill{height:100%;border-radius:4px;transition:width .4s}
+    .an-table{width:100%;border-collapse:collapse;font-size:13px}
+    .an-table th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border,#e5e7eb);font-weight:600;color:var(--muted,#6b7280)}
+    .an-table td{padding:6px 8px;border-bottom:1px solid var(--border,#f3f4f6)}
+    .an-table tr:last-child td{border-bottom:none}
+    .period-shared{margin-bottom:0}
+  </style>
 </head>
 <body>
 
@@ -58,6 +82,10 @@
       <div class="nav-group-label">Monitoring</div>
       <button class="nav-item" data-tab="qlog"><span class="nav-icon">◈</span> Question Log</button>
       <button class="nav-item" data-tab="analytics"><span class="nav-icon">▲</span> Analytics</button>
+      <button class="nav-item" data-tab="insights"><span class="nav-icon">◈</span> Query Insights</button>
+      <button class="nav-item" data-tab="costs"><span class="nav-icon">$</span> Cost Dashboard</button>
+      <button class="nav-item" data-tab="recommendations"><span class="nav-icon">✦</span> Recommendations</button>
+      <button class="nav-item" data-tab="gaplist"><span class="nav-icon">⊕</span> Gap Analysis</button>
       <button class="nav-item" data-tab="jobs"><span class="nav-icon">⚡</span> Jobs</button>
     </nav>
 
@@ -293,13 +321,9 @@
 
     <!-- ANALYTICS ────────────────────────────────────────────────────────── -->
     <div id="tab-analytics" class="tab-panel">
-      <div class="page-header">
-        <h1>Analytics</h1>
-        <p>Aggregated metrics for a given time range.</p>
-      </div>
-
+      <div class="page-header"><h1>Analytics</h1><p>Aggregated metrics for a given time range.</p></div>
       <div class="card">
-        <div class="period-pills" id="an-pills">
+        <div class="period-pills period-shared" id="an-pills">
           <button class="period-pill active" data-days="7">7 days</button>
           <button class="period-pill" data-days="30">30 days</button>
           <button class="period-pill" data-days="90">90 days</button>
@@ -307,18 +331,147 @@
         </div>
         <div id="an-custom-range" class="custom-range" style="display:none">
           <div class="form-row">
-            <div class="form-group">
-              <label for="an-from">From</label>
-              <input type="datetime-local" id="an-from">
-            </div>
-            <div class="form-group">
-              <label for="an-to">To</label>
-              <input type="datetime-local" id="an-to">
-            </div>
+            <div class="form-group"><label for="an-from">From</label><input type="datetime-local" id="an-from"></div>
+            <div class="form-group"><label for="an-to">To</label><input type="datetime-local" id="an-to"></div>
           </div>
           <button class="btn btn-primary" id="an-load-btn">Load</button>
         </div>
-        <div id="analytics-content" class="section-content"></div>
+      </div>
+      <div id="analytics-status" style="display:none" class="loading">Loading…</div>
+      <div id="analytics-body" style="display:none">
+        <div class="card"><div class="card-title">Summary</div><div id="an-stat-cards" class="stat-cards"></div></div>
+        <div class="an-row">
+          <div class="card"><div class="card-title">Source Mix</div><div class="chart-wrap"><canvas id="an-donut"></canvas></div></div>
+          <div class="card" style="flex:2"><div class="card-title">Volume by Day</div><div class="chart-wrap"><canvas id="an-vol-bar"></canvas></div></div>
+        </div>
+        <div class="an-row">
+          <div class="card"><div class="card-title">Latency Percentiles (ms)</div><div class="chart-wrap-sm"><canvas id="an-lat-bar"></canvas></div></div>
+          <div class="card" style="flex:2"><div class="card-title">Timing Averages</div><div id="an-timing" class="stat-cards" style="padding-top:8px"></div></div>
+        </div>
+        <div class="card"><div class="card-title">Latency over Time (ms)</div><div class="chart-wrap"><canvas id="an-lat-line"></canvas></div></div>
+        <div class="card"><div class="card-title">Tokens by Day</div><div class="chart-wrap"><canvas id="an-tok-bar"></canvas></div></div>
+        <div class="card"><div class="card-title">Activity Heatmap</div><div id="an-heatmap"></div></div>
+        <div class="an-row">
+          <div class="card"><div class="card-title">Chunk Score Distribution</div><div class="chart-wrap"><canvas id="an-score-hist"></canvas></div></div>
+          <div class="card"><div class="card-title">Question Word Count</div><div class="chart-wrap"><canvas id="an-wc-bar"></canvas></div></div>
+        </div>
+        <div class="card"><div class="card-title">Cost Breakdown</div><div id="an-cost-table"></div></div>
+        <div class="card"><div class="card-title">Slowest Queries</div><div id="an-slowest"></div></div>
+      </div>
+    </div>
+
+    <!-- QUERY INSIGHTS ──────────────────────────────────────────────────────── -->
+    <div id="tab-insights" class="tab-panel">
+      <div class="page-header"><h1>Query Insights</h1><p>Semantic question clustering — surfaces topic patterns and quality issues. Takes 20–40 s.</p></div>
+      <div class="card">
+        <div class="period-pills period-shared" id="ins-pills">
+          <button class="period-pill active" data-days="7">7 days</button>
+          <button class="period-pill" data-days="30">30 days</button>
+          <button class="period-pill" data-days="90">90 days</button>
+          <button class="period-pill" data-days="custom">Custom</button>
+        </div>
+        <div id="ins-custom-range" class="custom-range" style="display:none">
+          <div class="form-row">
+            <div class="form-group"><label for="ins-from">From</label><input type="datetime-local" id="ins-from"></div>
+            <div class="form-group"><label for="ins-to">To</label><input type="datetime-local" id="ins-to"></div>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" id="ins-run-btn">Run Analysis</button></div>
+      </div>
+      <div id="ins-status" style="display:none" class="loading">Analyzing… embedding &amp; clustering questions (20–40 s)</div>
+      <div id="ins-body" style="display:none">
+        <div class="card"><div class="card-title">Summary</div><div id="ins-summary" class="stat-cards"></div></div>
+        <div class="card"><div class="card-title">Clusters</div><div id="ins-clusters"></div></div>
+        <div class="card"><div class="card-title">Low Performers</div><div id="ins-low"></div></div>
+      </div>
+    </div>
+
+    <!-- COST DASHBOARD ──────────────────────────────────────────────────────── -->
+    <div id="tab-costs" class="tab-panel">
+      <div class="page-header"><h1>Cost Dashboard</h1><p>API and infrastructure cost estimates based on token usage.</p></div>
+      <div class="card">
+        <div class="period-pills period-shared" id="cost-pills">
+          <button class="period-pill active" data-days="7">7 days</button>
+          <button class="period-pill" data-days="30">30 days</button>
+          <button class="period-pill" data-days="90">90 days</button>
+          <button class="period-pill" data-days="custom">Custom</button>
+        </div>
+        <div id="cost-custom-range" class="custom-range" style="display:none">
+          <div class="form-row">
+            <div class="form-group"><label for="cost-from">From</label><input type="datetime-local" id="cost-from"></div>
+            <div class="form-group"><label for="cost-to">To</label><input type="datetime-local" id="cost-to"></div>
+          </div>
+          <button class="btn btn-primary" id="cost-load-btn">Load</button>
+        </div>
+      </div>
+      <div id="cost-status" style="display:none" class="loading">Loading…</div>
+      <div id="cost-body" style="display:none">
+        <div class="card">
+          <div class="card-title">Totals</div>
+          <div id="cost-totals" class="stat-cards"></div>
+          <div style="margin-top:14px">
+            <div style="font-size:13px;margin-bottom:4px">Projected monthly vs $<span id="cost-budget-label">50</span> budget</div>
+            <div class="budget-track"><div class="budget-fill" id="cost-budget-fill" style="background:#6366f1;width:0%"></div></div>
+          </div>
+        </div>
+        <div class="an-row">
+          <div class="card"><div class="card-title">API Costs</div><div id="cost-api-table"></div></div>
+          <div class="card"><div class="card-title">Infra Costs</div><div id="cost-infra-table"></div></div>
+        </div>
+        <div class="card"><div class="card-title">Cost by Day</div><div class="chart-wrap"><canvas id="cost-day-chart"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- RECOMMENDATIONS ─────────────────────────────────────────────────────── -->
+    <div id="tab-recommendations" class="tab-panel">
+      <div class="page-header"><h1>Recommendations</h1><p>AI-generated suggestions based on question quality signals.</p></div>
+      <div class="card">
+        <div class="period-pills period-shared" id="rec-pills">
+          <button class="period-pill active" data-days="7">7 days</button>
+          <button class="period-pill" data-days="30">30 days</button>
+          <button class="period-pill" data-days="90">90 days</button>
+          <button class="period-pill" data-days="custom">Custom</button>
+        </div>
+        <div id="rec-custom-range" class="custom-range" style="display:none">
+          <div class="form-row">
+            <div class="form-group"><label for="rec-from">From</label><input type="datetime-local" id="rec-from"></div>
+            <div class="form-group"><label for="rec-to">To</label><input type="datetime-local" id="rec-to"></div>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn btn-primary" id="rec-run-btn">Analyze</button>
+          <span id="rec-apply-msg"></span>
+        </div>
+      </div>
+      <div id="rec-status" style="display:none" class="loading">Generating recommendations…</div>
+      <div id="rec-body" style="display:none">
+        <div class="card"><div class="card-title">Quality Signals</div><div id="rec-signals" class="stat-cards"></div></div>
+        <div class="card"><div class="card-title">Recommendations</div><div id="rec-list"></div></div>
+      </div>
+    </div>
+
+    <!-- GAP ANALYSIS ────────────────────────────────────────────────────────── -->
+    <div id="tab-gaplist" class="tab-panel">
+      <div class="page-header"><h1>Gap Analysis</h1><p>Topic clusters where questions get poor retrieval — content gaps in your knowledge base.</p></div>
+      <div class="card">
+        <div class="period-pills period-shared" id="gap-pills">
+          <button class="period-pill active" data-days="7">7 days</button>
+          <button class="period-pill" data-days="30">30 days</button>
+          <button class="period-pill" data-days="90">90 days</button>
+          <button class="period-pill" data-days="custom">Custom</button>
+        </div>
+        <div id="gap-custom-range" class="custom-range" style="display:none">
+          <div class="form-row">
+            <div class="form-group"><label for="gap-from">From</label><input type="datetime-local" id="gap-from"></div>
+            <div class="form-group"><label for="gap-to">To</label><input type="datetime-local" id="gap-to"></div>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" id="gap-run-btn">Run Gap Analysis</button></div>
+      </div>
+      <div id="gap-status" style="display:none" class="loading">Analyzing… embedding low-score questions (20–40 s)</div>
+      <div id="gap-body" style="display:none">
+        <div class="card"><div class="card-title">Summary</div><div id="gap-summary" class="stat-cards"></div></div>
+        <div class="card"><div class="card-title">Content Gaps (ranked by severity)</div><div id="gap-list"></div></div>
       </div>
     </div>
 
@@ -442,12 +595,16 @@
 const ANSWERER_URL = 'https://answerer-848760828618.us-central1.run.app';
 const BASE = '';
 
-let accessToken = null;
-let tenantId    = null;
+let accessToken  = null;
+let refreshToken = null;
+let tenantId     = null;
+let _refreshing  = null;
 let widgetKey   = null;
-let qlogOffset  = 0;
-let qlogTotal   = 0;
-let qlogItems   = [];
+let qlogOffset   = 0;
+let qlogTotal    = 0;
+let qlogItems    = [];
+let qlogSortCol  = null;
+let qlogSortDir  = 'asc';
 let activeQlogRow = null;
 let tqChunks    = [];
 
@@ -463,7 +620,25 @@ function authHeaders() {
 }
 
 async function api(url, opts = {}) {
-  const res = await fetch(url, {headers: authHeaders(), ...opts});
+  let res = await fetch(url, {headers: authHeaders(), ...opts});
+  if (res.status === 401 && refreshToken) {
+    if (!_refreshing) {
+      _refreshing = fetch(`${BASE}/v1/auth/refresh`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({refresh_token: refreshToken}),
+      }).then(async rr => {
+        if (!rr.ok) return false;
+        const data = await rr.json();
+        accessToken  = data.access_token;
+        refreshToken = data.refresh_token;
+        return true;
+      }).catch(() => false).finally(() => { _refreshing = null; });
+    }
+    if (await _refreshing) {
+      res = await fetch(url, {headers: authHeaders(), ...opts});
+    }
+  }
   if (res.status === 401) {
     logout();
     document.getElementById('login-error').textContent = 'Session expired — please sign in again.';
@@ -527,7 +702,8 @@ async function login() {
       document.getElementById('login-error').textContent = data.message || data.detail || 'Login failed';
       return;
     }
-    accessToken = data.access_token;
+    accessToken  = data.access_token;
+    refreshToken = data.refresh_token;
     const claims = parseJWT(accessToken);
     tenantId = claims.tenant_id || null;
     document.getElementById('logged-in-as').textContent      = email;
@@ -551,7 +727,7 @@ async function logout() {
       method: 'POST', headers: {'Authorization': `Bearer ${accessToken}`}
     });
   } catch(_) {}
-  accessToken = null; tenantId = null;
+  accessToken = null; refreshToken = null; tenantId = null;
   document.getElementById('app-shell').setAttribute('hidden', '');
   document.getElementById('topbar').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
@@ -618,17 +794,41 @@ document.getElementById('an-pills').addEventListener('click', e => {
   applyPeriodPill('an-pills', 'an-from', 'an-to', 'an-custom-range', raw === 'custom' ? 'custom' : parseInt(raw), loadAnalytics);
 });
 
+function _pillsFor(prefix, cb) {
+  document.getElementById(`${prefix}-pills`).addEventListener('click', e => {
+    const pill = e.target.closest('.period-pill');
+    if (!pill) return;
+    const raw = pill.dataset.days;
+    applyPeriodPill(`${prefix}-pills`, `${prefix}-from`, `${prefix}-to`, `${prefix}-custom-range`, raw === 'custom' ? 'custom' : parseInt(raw), cb || null);
+  });
+  // Pre-populate date inputs with the default active pill's range
+  const active = document.querySelector(`#${prefix}-pills .period-pill.active`);
+  if (active && active.dataset.days !== 'custom') {
+    applyPeriodPill(`${prefix}-pills`, `${prefix}-from`, `${prefix}-to`, `${prefix}-custom-range`, parseInt(active.dataset.days), null);
+  }
+}
+_pillsFor('ins');
+_pillsFor('cost', loadCosts);
+_pillsFor('rec');
+_pillsFor('gap');
+
+document.getElementById('ins-run-btn').addEventListener('click', loadInsights);
+document.getElementById('rec-run-btn').addEventListener('click', loadRecommendations);
+document.getElementById('gap-run-btn').addEventListener('click', loadGaplist);
+
 const tabLoaders = {
-  settings:     loadSettings,
-  kbs:          loadKBs,
-  guardrails:   loadGuardrails,
-  curated:      loadCurated,
-  demoquestions: loadDemoQuestions,
-  qlog:       () => applyPeriodPill('qlog-pills', 'qlog-from', 'qlog-to', 'qlog-custom-range', 7, () => loadQlog(0)),
-  analytics:  () => applyPeriodPill('an-pills', 'an-from', 'an-to', 'an-custom-range', 7, loadAnalytics),
+  settings:        loadSettings,
+  kbs:             loadKBs,
+  guardrails:      loadGuardrails,
+  curated:         loadCurated,
+  demoquestions:   loadDemoQuestions,
+  qlog:          () => applyPeriodPill('qlog-pills', 'qlog-from', 'qlog-to', 'qlog-custom-range', 7, () => loadQlog(0)),
+  analytics:     () => applyPeriodPill('an-pills', 'an-from', 'an-to', 'an-custom-range', 7, loadAnalytics),
+  costs:         () => applyPeriodPill('cost-pills', 'cost-from', 'cost-to', 'cost-custom-range', 7, loadCosts),
 };
 
 function showTab(name) {
+  if (name !== 'kbs') stopKBPoll();
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
   const panel  = document.getElementById('tab-' + name);
@@ -774,6 +974,116 @@ async function loadSettings() {
 
 // ── KnowledgeBases ───────────────────────────────────────────────────────────
 
+let _kbPollTimer  = null;
+let _runningKBIds = new Set();
+
+function startKBPoll() {
+  stopKBPoll();
+  _kbPollTimer = setInterval(refreshKBProgress, 5000);
+}
+
+function stopKBPoll() {
+  if (_kbPollTimer) { clearInterval(_kbPollTimer); _kbPollTimer = null; }
+}
+
+function kbIsActive(kb) {
+  return kb.status === 'running' || kb.status === 'pending' ||
+         kb.index_status === 'running' || kb.index_status === 'pending';
+}
+
+function kbLogHtml(kb, indexDetail) {
+  const p  = kb.progress || {};
+  const ip = indexDetail?.progress || {};
+  const lines = [];
+
+  function entry(text, cls) {
+    return `<div class="kb-log-entry${cls ? ' kb-log-'+cls : ''}">${esc(String(text))}</div>`;
+  }
+
+  const crawlActive  = kb.status === 'running' || kb.status === 'pending';
+  const crawlDone    = kb.status === 'completed';
+  const crawlFailed  = kb.status === 'failed';
+  const indexActive  = kb.index_status === 'running' || kb.index_status === 'pending';
+  const indexDone    = kb.index_status === 'completed';
+  const indexFailed  = kb.index_status === 'failed';
+
+  if (crawlActive || crawlDone || crawlFailed) {
+    const icon = crawlActive ? '⟳' : crawlDone ? '✓' : '✗';
+    lines.push(`<div class="kb-log-title">${icon} Crawl</div>`);
+    if (p.pages_crawled != null) lines.push(entry(`${Number(p.pages_crawled).toLocaleString()} pages crawled`));
+    if (p.queue_size    != null && crawlActive) lines.push(entry(`${Number(p.queue_size).toLocaleString()} in queue`));
+    if (p.pages_store_failed)  lines.push(entry(`${p.pages_store_failed} store failures`, 'warn'));
+    if (p.pages_skipped_http)  lines.push(entry(`${p.pages_skipped_http} skipped (HTTP / timeout)`));
+    if (p.pages_skipped_robots) lines.push(entry(`${p.pages_skipped_robots} skipped (robots.txt)`));
+    if (p.pages_skipped_scope)  lines.push(entry(`${p.pages_skipped_scope} skipped (out of scope)`));
+    if (p.pages_skipped_content) lines.push(entry(`${p.pages_skipped_content} skipped (content type)`));
+    if (p.stop_reason === 'max_pages reached') lines.push(entry('Stopped: page limit reached'));
+    else if (p.stop_reason === 'queue exhausted') lines.push(entry('Stopped: all pages found'));
+    if (crawlFailed && kb.error) lines.push(entry(kb.error, 'err'));
+  }
+
+  if (indexActive || indexDone || indexFailed) {
+    const icon = indexActive ? '⟳' : indexDone ? '✓' : '✗';
+    lines.push(`<div class="kb-log-title">${icon} Index</div>`);
+    const idxPages = ip.pages_indexed ?? kb.pages_indexed;
+    const idxTotal = ip.pages_total;
+    if (idxPages != null) lines.push(entry(`${Number(idxPages).toLocaleString()}${idxTotal ? ' / ' + Number(idxTotal).toLocaleString() : ''} pages indexed`));
+    if (ip.chunks_created   != null) lines.push(entry(`${Number(ip.chunks_created).toLocaleString()} chunks`));
+    if (ip.vectors_upserted != null) lines.push(entry(`${Number(ip.vectors_upserted).toLocaleString()} vectors`));
+    const tokens = ip.embed_tokens ?? kb.embed_tokens;
+    if (tokens != null) lines.push(entry(`${Number(tokens).toLocaleString()} embed tokens`));
+    if (ip.pages_failed) lines.push(entry(`${ip.pages_failed} pages failed`, 'warn'));
+    if (indexFailed && indexDetail?.error) lines.push(entry(indexDetail.error, 'err'));
+  }
+
+  if (!lines.length) return '<span class="kb-log-empty">No activity yet.</span>';
+
+  const now = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  return lines.join('') + `<div class="kb-log-updated">Updated ${now}</div>`;
+}
+
+async function refreshKBProgress() {
+  if (!document.getElementById('tab-kbs')?.classList.contains('active')) { stopKBPoll(); return; }
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawls`);
+    if (!res.ok) return;
+    const { items = [] } = await res.json();
+
+    let needReload  = false;
+    let stillActive = false;
+
+    for (const kb of items) {
+      const active = kbIsActive(kb);
+      if (active) stillActive = true;
+      if (_runningKBIds.has(kb.job_id) && !active) needReload = true;
+      if (active) _runningKBIds.add(kb.job_id);
+
+      const logEl    = document.getElementById(`kb-log-${kb.job_id}`);
+      const statusEl = document.getElementById(`kb-status-${kb.job_id}`);
+      const errEl    = document.getElementById(`kb-err-${kb.job_id}`);
+      if (!logEl) continue;
+
+      let indexDetail = null;
+      const indexActive = kb.index_status === 'running' || kb.index_status === 'pending';
+      if (indexActive && kb.index_job_id) {
+        try {
+          const ir = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/index/${kb.index_job_id}`);
+          if (ir.ok) indexDetail = await ir.json();
+        } catch(_) {}
+      }
+
+      logEl.innerHTML = kbLogHtml(kb, indexDetail);
+
+      if (errEl) {
+        errEl.innerHTML = kb.error ? `<span class="kb-error-text">${esc(kb.error)}</span>` : '';
+      }
+    }
+
+    if (needReload) { _runningKBIds.clear(); stopKBPoll(); loadKBs(); }
+    else if (!stillActive) stopKBPoll();
+  } catch(_) {}
+}
+
 async function loadKBs() {
   const el = document.getElementById('kbs-list');
   if (!el) return;
@@ -805,30 +1115,43 @@ async function loadKBs() {
         const pagesCrawled = kb.progress?.pages_crawled ?? '—';
         const pagesIndexed = kb.pages_indexed ?? '—';
         const maxPages     = kb.progress?.pages_total ?? null;
-        const crawledOn    = kb.completed  ? fmtDate(kb.completed)       : (kb.status === 'running' ? 'in progress…' : '—');
-        const indexedOn    = kb.index_completed ? fmtDate(kb.index_completed) : (kb.index_status === 'running' ? 'in progress…' : '—');
+        const crawledOn    = kb.completed      ? fmtDate(kb.completed)           : (kb.status === 'running'       ? 'in progress…' : '—');
+        const indexedOn    = kb.index_completed ? fmtDate(kb.index_completed)    : (kb.index_status === 'running' ? 'in progress…' : '—');
         const tokens       = kb.embed_tokens != null ? `${kb.embed_tokens.toLocaleString()} embed tokens` : '';
 
         const crawlBadge = `<span class="badge ${crawlStatusClass[kb.status]||'badge-gray'}">${crawlStatusLabel[kb.status]||kb.status}</span>`;
         const idxBadge   = kb.index_status ? `<span class="badge ${idxStatusClass[kb.index_status]||'badge-gray'}">${idxStatusLabel[kb.index_status]||kb.index_status}</span>` : '';
 
-        const canUpdate = kb.status === 'completed';
-        const canDelete = kb.status !== 'running';
-
+        const canUpdate  = kb.status === 'completed';
         const displayName = kb.name || '';
+
         return `<div class="card kb-card" id="kb-card-${esc(kb.job_id)}">
-          <div class="kb-card-heading">${esc(displayName || '—')}</div>
-          <div class="kb-url">${esc(kb.url||'Unknown URL')}</div>
-          <div class="kb-status-row">${crawlBadge}<span>${pagesCrawled}${maxPages ? ' / '+maxPages : ''} pages crawled ${crawledOn}</span>${kb.error ? `<span class="kb-error-text">${esc(kb.error)}</span>` : ''}</div>
-          <div class="kb-index-row">${idxBadge || '<span class="badge badge-gray">not indexed</span>'}<span>${pagesIndexed} pages indexed ${indexedOn}</span></div>
-          ${tokens ? `<div class="kb-tokens-label">${tokens}</div>` : ''}
-          <div class="kb-actions">
-            <button class="btn btn-secondary btn-sm" data-action="kb-update" data-id="${esc(kb.job_id)}" data-url="${esc(kb.url)}" data-name="${esc(displayName)}" data-maxpages="${maxPages||10}" ${canUpdate?'':'disabled'} title="${canUpdate?'Re-crawl and re-index this source':'Crawl must be completed first'}">Update</button>
-            <button class="btn btn-danger btn-sm" data-action="kb-delete" data-id="${esc(kb.job_id)}" ${canDelete?'':'disabled'}>Delete</button>
+          <div class="kb-col-info">
+            <div class="kb-card-heading">${esc(displayName || '—')}</div>
+            <div class="kb-url">${esc(kb.url||'Unknown URL')}</div>
+            <div class="kb-actions">
+              <button class="btn btn-secondary btn-sm" data-action="kb-update" data-id="${esc(kb.job_id)}" data-url="${esc(kb.url)}" data-name="${esc(displayName)}" data-maxpages="${maxPages||10}" ${canUpdate?'':'disabled'} title="${canUpdate?'Re-crawl and re-index this source':'Crawl must be completed first'}">Update</button>
+              <button class="btn btn-danger btn-sm" data-action="kb-delete" data-id="${esc(kb.job_id)}">Delete</button>
+            </div>
+            <div id="kb-msg-${esc(kb.job_id)}" class="kb-msg"></div>
           </div>
-          <div id="kb-msg-${esc(kb.job_id)}" class="kb-msg"></div>
+          <div class="kb-col-status" id="kb-status-${esc(kb.job_id)}">
+            <div class="kb-status-row">${crawlBadge}<span>${pagesCrawled}${maxPages ? ' / '+maxPages : ''} pages crawled${crawledOn !== '—' ? ' · '+crawledOn : ''}</span></div>
+            <div class="kb-index-row">${idxBadge || '<span class="badge badge-gray">not indexed</span>'}<span>${pagesIndexed} pages indexed${indexedOn !== '—' ? ' · '+indexedOn : ''}</span></div>
+            ${tokens ? `<div class="kb-tokens-label">${tokens}</div>` : ''}
+            <div id="kb-err-${esc(kb.job_id)}">${kb.error ? `<span class="kb-error-text">${esc(kb.error)}</span>` : ''}</div>
+          </div>
+          <div class="kb-col-log" id="kb-log-${esc(kb.job_id)}">${kbLogHtml(kb, null)}</div>
         </div>`;
       }).join('');
+
+    // Start polling if any job is active
+    if (items.some(kbIsActive)) {
+      items.forEach(kb => { if (kbIsActive(kb)) _runningKBIds.add(kb.job_id); });
+      startKBPoll();
+    } else {
+      stopKBPoll();
+    }
   } catch(e) { if (e.message !== 'Session expired') { el.className = 'msg-err'; el.textContent = 'Failed to load knowledgebases.'; } }
 }
 
@@ -1278,47 +1601,110 @@ async function loadQlog(offset) {
       el.innerHTML = '<div class="empty-state">No entries found.</div>';
       document.getElementById('qlog-pagination').style.display = 'none'; return;
     }
-    el.innerHTML = `
-      <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Time</th><th>Words</th><th>Question</th><th>Source</th>
-          <th>Total ms</th><th>Embed ms</th><th>Vector ms</th><th>LLM ms</th>
-          <th>Ans tokens</th><th>Prompt tokens</th><th>Embed tokens</th>
-        </tr></thead>
-        <tbody id="qlog-tbody">${qlogItems.map((q, i) => `<tr data-idx="${i}" class="qlog-row">
-          <td class="nowrap small muted">${fmtDate(q.timestamp)}</td>
-          <td>${q.word_count ?? '—'}</td>
-          <td class="cell-question">${esc(q.question)}</td>
-          <td>${sourceBadge(q.source)}</td>
-          <td>${msVal(q.timing?.total_ms)}</td>
-          <td>${msVal(q.timing?.embed_ms)}</td>
-          <td>${msVal(q.timing?.vector_search_ms)}</td>
-          <td>${msVal(q.timing?.llm_ms)}</td>
-          <td class="ms-val">${q.answer_tokens ?? '—'}</td>
-          <td class="ms-val">${q.prompt_tokens ?? '—'}</td>
-          <td class="ms-val">${q.embed_tokens ?? '—'}</td>
-        </tr>`).join('')}
-        </tbody>
-      </table>
-      </div>`;
-    const pag = document.getElementById('qlog-pagination');
-    pag.style.display = 'flex';
-    document.getElementById('qlog-prev').disabled = offset === 0;
-    document.getElementById('qlog-next').disabled = offset + limit >= qlogTotal;
-    document.getElementById('qlog-page-info').textContent = `${offset + 1}–${Math.min(offset + limit, qlogTotal)} of ${qlogTotal}`;
-
-    document.getElementById('qlog-tbody').addEventListener('click', e => {
-      const row = e.target.closest('.qlog-row');
-      if (!row) return;
-      const idx = parseInt(row.dataset.idx);
-      showQlogDetail(idx, row);
-    });
-  } catch(e) { if (e.message !== 'Session expired') el.innerHTML = '<div class="msg-err">Failed to load question log.</div>'; }
+    renderQlogTable(el, offset, limit);
+  } catch(e) { if (e.message !== 'Session expired') el.innerHTML = `<div class="msg-err">Failed to load question log: ${e.message}</div>`; }
 }
 
-function showQlogDetail(idx, row) {
-  const q = qlogItems[idx];
+const QLOG_COLS = [
+  { key: 'timestamp',     label: 'Time',          tip: 'Timestamp when the question was received',
+    val: q => `<td class="nowrap small muted">${fmtDate(q.timestamp)}</td>`,
+    sort: q => q.timestamp ?? '' },
+  { key: 'word_count',    label: 'Words',         tip: 'Word count of the question text',
+    val: q => `<td>${q.word_count ?? '—'}</td>`,
+    sort: q => q.word_count ?? -1 },
+  { key: 'question',      label: 'Question',      tip: 'The question text submitted by the user — click any row to see the full question and answer',
+    val: q => `<td class="cell-question">${esc(q.question)}</td>`,
+    sort: q => q.question ?? '' },
+  { key: 'source',        label: 'Source',        tip: 'How the answer was produced: rag (vector search + LLM), curated (exact-match override), guardrail (blocked/redirected), or error',
+    val: q => `<td>${sourceBadge(q.source)}</td>`,
+    sort: q => q.source ?? '' },
+  { key: 'total_ms',      label: 'Total ms',      tip: 'End-to-end response latency in milliseconds — includes all pipeline stages',
+    val: q => `<td>${msVal(q.timing?.total_ms)}</td>`,
+    sort: q => q.timing?.total_ms ?? -1 },
+  { key: 'embed_ms',      label: 'Embed ms',      tip: 'Time taken to embed the question into a vector using the embedding model',
+    val: q => `<td>${msVal(q.timing?.embed_ms)}</td>`,
+    sort: q => q.timing?.embed_ms ?? -1 },
+  { key: 'vector_ms',     label: 'Vector ms',     tip: 'Time taken to search the Qdrant vector store for relevant chunks',
+    val: q => `<td>${msVal(q.timing?.vector_search_ms)}</td>`,
+    sort: q => q.timing?.vector_search_ms ?? -1 },
+  { key: 'llm_ms',        label: 'LLM ms',        tip: 'Time taken by the language model to generate the answer (zero for curated/guardrail answers)',
+    val: q => `<td>${msVal(q.timing?.llm_ms)}</td>`,
+    sort: q => q.timing?.llm_ms ?? -1 },
+  { key: 'answer_tokens', label: 'Ans tokens',    tip: 'Number of tokens in the generated answer — indicates answer length',
+    val: q => `<td class="ms-val">${q.answer_tokens ?? '—'}</td>`,
+    sort: q => q.answer_tokens ?? -1 },
+  { key: 'prompt_tokens', label: 'Prompt tokens', tip: 'Total tokens sent to the LLM: system prompt + retrieved chunks + question',
+    val: q => `<td class="ms-val">${q.prompt_tokens ?? '—'}</td>`,
+    sort: q => q.prompt_tokens ?? -1 },
+  { key: 'embed_tokens',  label: 'Embed tokens',  tip: 'Tokens consumed by the embedding model to encode the question',
+    val: q => `<td class="ms-val">${q.embed_tokens ?? '—'}</td>`,
+    sort: q => q.embed_tokens ?? -1,  tipLeft: true },
+];
+
+function renderQlogTable(el, offset, limit) {
+  // Build sorted copy of items (don't mutate qlogItems order)
+  const col = QLOG_COLS.find(c => c.key === qlogSortCol);
+  const sorted = col
+    ? [...qlogItems].sort((a, b) => {
+        const av = col.sort(a), bv = col.sort(b);
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        return qlogSortDir === 'asc' ? cmp : -cmp;
+      })
+    : qlogItems;
+
+  const theadCells = QLOG_COLS.map(c => {
+    const isSort = c.key === qlogSortCol;
+    const arrow  = isSort ? `<span class="th-sort">${qlogSortDir === 'asc' ? '↑' : '↓'}</span>` : '';
+    const tipCls = c.tipLeft ? ' th-tip-left' : '';
+    return `<th data-col="${c.key}">
+      <span class="th-wrap">
+        ${c.label}
+        <span class="th-info">i<span class="th-tip${tipCls}">${esc(c.tip)}</span></span>
+        ${arrow}
+      </span>
+    </th>`;
+  }).join('');
+
+  const tbodyRows = sorted.map((q, i) =>
+    `<tr data-idx="${i}" class="qlog-row">${QLOG_COLS.map(c => c.val(q)).join('')}</tr>`
+  ).join('');
+
+  el.innerHTML = `
+    <div class="table-wrap">
+    <table>
+      <thead><tr>${theadCells}</tr></thead>
+      <tbody id="qlog-tbody">${tbodyRows}</tbody>
+    </table>
+    </div>`;
+
+  const pag = document.getElementById('qlog-pagination');
+  pag.style.display = 'flex';
+  document.getElementById('qlog-prev').disabled = offset === 0;
+  document.getElementById('qlog-next').disabled = offset + limit >= qlogTotal;
+  document.getElementById('qlog-page-info').textContent = `${offset + 1}–${Math.min(offset + limit, qlogTotal)} of ${qlogTotal}`;
+
+  el.querySelector('thead').addEventListener('click', e => {
+    const th = e.target.closest('th[data-col]');
+    if (!th) return;
+    // Don't trigger sort when hovering over the info icon
+    if (e.target.closest('.th-info')) return;
+    const key = th.dataset.col;
+    if (qlogSortCol === key) qlogSortDir = qlogSortDir === 'asc' ? 'desc' : 'asc';
+    else { qlogSortCol = key; qlogSortDir = 'asc'; }
+    activeQlogRow = null;
+    document.getElementById('qlog-detail-panel').innerHTML = '';
+    renderQlogTable(el, offset, limit);
+  });
+
+  document.getElementById('qlog-tbody').addEventListener('click', e => {
+    const row = e.target.closest('.qlog-row');
+    if (!row) return;
+    showQlogDetail(parseInt(row.dataset.idx), row, sorted);
+  });
+}
+
+function showQlogDetail(idx, row, items) {
+  const q = (items || qlogItems)[idx];
   if (!q) return;
   if (activeQlogRow) activeQlogRow.classList.remove('active-row');
   row.classList.add('active-row');
@@ -1372,57 +1758,418 @@ document.getElementById('qlog-next').addEventListener('click', () => {
   loadQlog(qlogOffset + limit);
 });
 
+// ── Chart utilities ───────────────────────────────────────────────────────────
+
+const _charts = {};
+function _mkChart(id, cfg) {
+  if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+  const el = document.getElementById(id);
+  if (!el) return;
+  _charts[id] = new Chart(el, cfg);
+}
+
+const _SRC_COLORS = {rag:'#3b82f6', curated:'#22c55e', guardrail:'#f59e0b', error:'#ef4444'};
+const _SRC_KEYS   = ['rag','curated','guardrail','error'];
+
+function _dateRange(prefix) {
+  const from = document.getElementById(`${prefix}-from`)?.value;
+  const to   = document.getElementById(`${prefix}-to`)?.value;
+  return {
+    date_from: from ? new Date(from).toISOString() : new Date(Date.now() - 7*86400000).toISOString(),
+    date_to:   to   ? new Date(to).toISOString()   : new Date().toISOString(),
+  };
+}
+
+function _showSection(statusId, bodyId, loading) {
+  document.getElementById(statusId).style.display = loading ? '' : 'none';
+  document.getElementById(bodyId).style.display   = loading ? 'none' : '';
+}
+
+function _statCard(label, value, sub='') {
+  return `<div class="stat-card"><div class="stat-card-label">${label}</div><div class="stat-card-value">${value}</div>${sub?`<div class="stat-card-sub">${sub}</div>`:''}</div>`;
+}
+
 // ── Analytics ─────────────────────────────────────────────────────────────────
 
 async function loadAnalytics() {
-  const el   = document.getElementById('analytics-content');
-  const from = document.getElementById('an-from').value;
-  const to   = document.getElementById('an-to').value;
-  if (!to) { el.innerHTML = '<div class="msg-err">To date is required.</div>'; return; }
-  el.innerHTML = '<div class="loading">Loading…</div>';
-  const params = new URLSearchParams({to: new Date(to).toISOString()});
-  if (from) params.set('from', new Date(from).toISOString());
+  document.getElementById('analytics-status').style.display = '';
+  document.getElementById('analytics-body').style.display   = 'none';
+  const body = _dateRange('an');
   try {
-    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/analytics?${params}`);
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/analytics`, {method:'POST', body:JSON.stringify(body)});
     const d   = await res.json();
-    if (!res.ok) { el.innerHTML = `<div class="msg-err">Error: ${d.message||JSON.stringify(d)}</div>`; return; }
+    if (!res.ok) { document.getElementById('analytics-status').innerHTML = `<div class="msg-err">Error: ${d.detail||JSON.stringify(d)}</div>`; return; }
+    document.getElementById('analytics-status').style.display = 'none';
+    document.getElementById('analytics-body').style.display   = '';
 
-    const totalQ = d.total_questions ?? d.questions_asked ?? 0;
-    const src    = d.source_breakdown || {};
-    const avgMs  = d.avg_response_ms ?? d.avg_response_time_ms ?? null;
-    const totTok = d.total_tokens ?? d.tokens_used ?? null;
+    const s = d.summary;
+    document.getElementById('an-stat-cards').innerHTML = [
+      _statCard('Total Questions', s.total.toLocaleString()),
+      _statCard('Avg / Day', s.avg_per_day.toLocaleString()),
+      _statCard('Error Rate', s.error_rate_pct + '%'),
+      _statCard('Curated Rate', s.curated_rate_pct + '%'),
+      _statCard('Total Cost', '$' + s.total_cost_usd.toFixed(4)),
+      s.peak_slot ? _statCard('Peak Hour', s.peak_slot.slice(11)+':00', s.peak_count+' q') : '',
+    ].join('');
 
-    el.innerHTML = `
-      <div class="stat-cards">
-        <div class="stat-card">
-          <div class="stat-card-label">Total Questions</div>
-          <div class="stat-card-value">${totalQ.toLocaleString()}</div>
-        </div>
-        ${avgMs != null ? `<div class="stat-card">
-          <div class="stat-card-label">Avg Response</div>
-          <div class="stat-card-value">${avgMs}</div>
-          <div class="stat-card-sub">ms</div>
-        </div>` : ''}
-        ${totTok != null ? `<div class="stat-card">
-          <div class="stat-card-label">Total Tokens</div>
-          <div class="stat-card-value">${totTok.toLocaleString()}</div>
-        </div>` : ''}
-      </div>
-      ${Object.keys(src).length ? `<div class="stat-cards">
-        ${['rag','curated','guardrail','error'].map(k => src[k] != null ? `
-        <div class="stat-card">
-          <div class="stat-card-label">${k}</div>
-          <div class="stat-card-value">${src[k].toLocaleString()}</div>
-        </div>` : '').join('')}
-      </div>` : ''}
-      <details class="details-raw">
-        <summary>Raw JSON</summary>
-        <pre class="raw-json">${JSON.stringify(d, null, 2)}</pre>
-      </details>`;
-  } catch(e) { if (e.message !== 'Session expired') el.innerHTML = '<div class="msg-err">Failed to load analytics.</div>'; }
+    const t = d.timing_avgs;
+    document.getElementById('an-timing').innerHTML = [
+      _statCard('Embed', t.embed_ms, 'ms avg'),
+      _statCard('Vector', t.vector_ms, 'ms avg'),
+      _statCard('LLM', t.llm_ms, 'ms avg'),
+    ].join('');
+
+    // Source donut
+    _mkChart('an-donut', {
+      type: 'doughnut',
+      data: {
+        labels: _SRC_KEYS,
+        datasets: [{data: _SRC_KEYS.map(k => s[k]), backgroundColor: _SRC_KEYS.map(k => _SRC_COLORS[k])}]
+      },
+      options: {plugins:{legend:{position:'bottom'}}, maintainAspectRatio:false}
+    });
+
+    // Volume stacked bar
+    const days = d.volume_by_day;
+    _mkChart('an-vol-bar', {
+      type: 'bar',
+      data: {
+        labels: days.map(r => r.date.slice(5)),
+        datasets: _SRC_KEYS.map(k => ({label:k, data:days.map(r=>r[k]), backgroundColor:_SRC_COLORS[k], stack:'s'}))
+      },
+      options: {scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true}}, plugins:{legend:{position:'bottom'}}, maintainAspectRatio:false}
+    });
+
+    // Latency percentiles bar
+    const lt = d.latency;
+    _mkChart('an-lat-bar', {
+      type: 'bar',
+      data: {
+        labels: ['p50','p75','p95','p99','avg','max'],
+        datasets: [{data:[lt.p50,lt.p75,lt.p95,lt.p99,lt.avg,lt.max], backgroundColor:'#6366f1'}]
+      },
+      options: {plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}, maintainAspectRatio:false}
+    });
+
+    // Latency series line
+    const ls = d.latency_series;
+    _mkChart('an-lat-line', {
+      type: 'line',
+      data: {
+        labels: ls.map(r => r.ts.slice(11,16)),
+        datasets: [
+          {label:'Total',  data:ls.map(r=>r.total_ms),  borderColor:'#6366f1', tension:.3, pointRadius:0, fill:false},
+          {label:'LLM',    data:ls.map(r=>r.llm_ms),    borderColor:'#3b82f6', tension:.3, pointRadius:0, fill:false},
+          {label:'Embed',  data:ls.map(r=>r.embed_ms),  borderColor:'#22c55e', tension:.3, pointRadius:0, fill:false},
+          {label:'Vector', data:ls.map(r=>r.chroma_ms), borderColor:'#f59e0b', tension:.3, pointRadius:0, fill:false},
+        ]
+      },
+      options: {scales:{y:{beginAtZero:true}}, plugins:{legend:{position:'bottom'}}, maintainAspectRatio:false}
+    });
+
+    // Token by day
+    const td = d.token_by_day;
+    _mkChart('an-tok-bar', {
+      type: 'bar',
+      data: {
+        labels: td.map(r => r.date.slice(5)),
+        datasets: [
+          {label:'Prompt', data:td.map(r=>r.prompt), backgroundColor:'#3b82f6', stack:'s'},
+          {label:'Answer', data:td.map(r=>r.answer), backgroundColor:'#22c55e', stack:'s'},
+        ]
+      },
+      options: {scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true}}, plugins:{legend:{position:'bottom'}}, maintainAspectRatio:false}
+    });
+
+    // Heatmap
+    const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const maxHM = Math.max(1, ...d.heatmap.flat());
+    let hmHtml = '<div class="hm-grid">';
+    hmHtml += '<div class="hm-label"></div>';
+    for (let h=0;h<24;h++) hmHtml += `<div class="hm-hour-label">${h%4===0?h:''}</div>`;
+    for (let dow=0;dow<7;dow++) {
+      hmHtml += `<div class="hm-label">${DAYS[dow]}</div>`;
+      for (let h=0;h<24;h++) {
+        const v = d.heatmap[dow][h];
+        const op = v===0 ? 0.05 : 0.1 + (v/maxHM)*0.9;
+        hmHtml += `<div class="hm-cell" style="background:rgba(99,102,241,${op.toFixed(2)})" title="${DAYS[dow]} ${h}:00 — ${v}"></div>`;
+      }
+    }
+    hmHtml += '</div>';
+    document.getElementById('an-heatmap').innerHTML = hmHtml;
+
+    // Score histogram
+    const bucketLabels = Array.from({length:20},(_,i)=>(i*0.05).toFixed(2));
+    _mkChart('an-score-hist', {
+      type: 'bar',
+      data: {labels:bucketLabels, datasets:[{data:d.score_buckets, backgroundColor:'#6366f1'}]},
+      options: {plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}, maintainAspectRatio:false}
+    });
+
+    // Word count bar
+    _mkChart('an-wc-bar', {
+      type: 'bar',
+      data: {labels:d.wc_dist.map(r=>r.label), datasets:[{data:d.wc_dist.map(r=>r.count), backgroundColor:'#3b82f6'}]},
+      options: {plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}, maintainAspectRatio:false}
+    });
+
+    // Cost table
+    const c = d.costs;
+    document.getElementById('an-cost-table').innerHTML = `
+      <table class="an-table">
+        <tr><th>Category</th><th>Amount</th></tr>
+        <tr><td>Embedding</td><td>$${c.embedding_usd.toFixed(6)}</td></tr>
+        <tr><td>LLM Input</td><td>$${c.llm_input_usd.toFixed(6)}</td></tr>
+        <tr><td>LLM Output</td><td>$${c.llm_output_usd.toFixed(6)}</td></tr>
+        <tr><td><strong>Total</strong></td><td><strong>$${c.total_usd.toFixed(6)}</strong></td></tr>
+      </table>`;
+
+    // Slowest table
+    document.getElementById('an-slowest').innerHTML = `
+      <table class="an-table">
+        <tr><th>Question</th><th>Source</th><th>Total</th><th>LLM</th><th>Embed</th></tr>
+        ${d.slowest.map(r=>`<tr>
+          <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.question)}</td>
+          <td><span class="badge ${r.source==='rag'?'badge-blue':r.source==='curated'?'badge-green':r.source==='guardrail'?'badge-yellow':'badge-red'}">${r.source}</span></td>
+          <td class="ms-val">${r.total_ms}</td><td class="ms-val">${r.llm_ms??'—'}</td><td class="ms-val">${r.embed_ms??'—'}</td>
+        </tr>`).join('')}
+      </table>`;
+
+  } catch(e) { if (e.message !== 'Session expired') document.getElementById('analytics-status').innerHTML = `<div class="msg-err">Failed to load analytics: ${e.message}</div>`; }
 }
 
 document.getElementById('an-load-btn').addEventListener('click', loadAnalytics);
+
+// ── Query Insights ────────────────────────────────────────────────────────────
+
+async function loadInsights() {
+  const btn = document.getElementById('ins-run-btn');
+  btn.disabled = true;
+  document.getElementById('ins-status').style.display = '';
+  document.getElementById('ins-status').className = 'loading';
+  document.getElementById('ins-status').textContent = 'Analyzing… embedding & clustering questions (20–40 s)';
+  document.getElementById('ins-body').style.display = 'none';
+  const body = _dateRange('ins');
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/insights`, {method:'POST', body:JSON.stringify(body)});
+    const d   = await res.json();
+    if (!res.ok) { document.getElementById('ins-status').innerHTML = `<div class="msg-err">Error: ${d.detail||JSON.stringify(d)}</div>`; return; }
+    document.getElementById('ins-status').style.display = 'none';
+    document.getElementById('ins-body').style.display = '';
+
+    const sm = d.summary;
+    document.getElementById('ins-summary').innerHTML = [
+      _statCard('Questions Analyzed', sm.total.toLocaleString()),
+      _statCard('Clusters', sm.k),
+      sm.silhouette != null ? _statCard('Silhouette', sm.silhouette.toFixed(3)) : '',
+    ].join('');
+
+    const badgeCls = {good:'badge-green', weak:'badge-yellow', poor:'badge-red', curated:'badge-blue'};
+    document.getElementById('ins-clusters').innerHTML = d.clusters.map(c => `
+      <div class="cluster-card">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span class="badge ${badgeCls[c.badge]||'badge-gray'}">${c.badge}</span>
+          <strong>${esc(c.label||'Cluster '+c.id)}</strong>
+          <span class="muted" style="font-size:12px;margin-left:auto">${c.n} questions · avg score ${c.avg_score??'—'} · ${c.error_rate_pct}% error · ${c.avg_ms}ms avg</span>
+        </div>
+        <details><summary>${c.sample_questions.length} sample questions</summary>
+          <ul>${c.sample_questions.map(q=>`<li>${esc(q)}</li>`).join('')}</ul>
+        </details>
+      </div>`).join('') || '<div class="muted">No clusters found.</div>';
+
+    document.getElementById('ins-low').innerHTML = d.low_performers.length
+      ? `<table class="an-table">
+          <tr><th>Question</th><th>Source</th><th>Avg Score</th><th>ms</th></tr>
+          ${d.low_performers.map(r=>`<tr>
+            <td style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.question)}</td>
+            <td>${r.source||'—'}</td>
+            <td>${r.avg_chunk_score??'—'}</td>
+            <td>${r.total_ms??'—'}</td>
+          </tr>`).join('')}
+         </table>`
+      : '<div class="muted">No low performers in this period.</div>';
+  } catch(e) { if (e.message !== 'Session expired') document.getElementById('ins-status').innerHTML = `<div class="msg-err">Error: ${e.message}</div>`; }
+  finally { btn.disabled = false; }
+}
+
+// ── Cost Dashboard ────────────────────────────────────────────────────────────
+
+async function loadCosts() {
+  document.getElementById('cost-status').style.display = '';
+  document.getElementById('cost-body').style.display   = 'none';
+  const body = _dateRange('cost');
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/costs`, {method:'POST', body:JSON.stringify(body)});
+    const d   = await res.json();
+    if (!res.ok) { document.getElementById('cost-status').innerHTML = `<div class="msg-err">Error: ${d.detail||JSON.stringify(d)}</div>`; return; }
+    document.getElementById('cost-status').style.display = 'none';
+    document.getElementById('cost-body').style.display   = '';
+
+    document.getElementById('cost-totals').innerHTML = [
+      _statCard('Total (period)', '$' + d.total_usd.toFixed(4)),
+      _statCard('Projected / month', '$' + d.projected_monthly_usd.toFixed(2)),
+      _statCard('API Costs', '$' + d.api.total_usd.toFixed(4)),
+      _statCard('Infra Costs', '$' + d.infra.total_usd.toFixed(4)),
+    ].join('');
+
+    const pct = Math.min(d.projected_monthly_usd / d.budget_usd * 100, 100);
+    document.getElementById('cost-budget-label').textContent = d.budget_usd.toFixed(0);
+    const fill = document.getElementById('cost-budget-fill');
+    fill.style.width = pct.toFixed(1) + '%';
+    fill.style.background = pct > 90 ? '#ef4444' : pct > 70 ? '#f59e0b' : '#6366f1';
+
+    document.getElementById('cost-api-table').innerHTML = `
+      <table class="an-table">
+        <tr><th>Category</th><th>Amount</th></tr>
+        <tr><td>Embedding</td><td>$${d.api.embedding_usd.toFixed(6)}</td></tr>
+        <tr><td>LLM Input</td><td>$${d.api.llm_input_usd.toFixed(6)}</td></tr>
+        <tr><td>LLM Output</td><td>$${d.api.llm_output_usd.toFixed(6)}</td></tr>
+        <tr><td><strong>Total API</strong></td><td><strong>$${d.api.total_usd.toFixed(6)}</strong></td></tr>
+      </table>`;
+
+    document.getElementById('cost-infra-table').innerHTML = `
+      <table class="an-table">
+        <tr><th>Resource</th><th>Amount</th></tr>
+        <tr><td>VM (e2-small)</td><td>$${d.infra.vm_usd.toFixed(4)}</td></tr>
+        <tr><td>Disk (50 GB)</td><td>$${d.infra.disk_usd.toFixed(4)}</td></tr>
+        <tr><td>Cloud Run</td><td>$${d.infra.cloud_run_usd.toFixed(4)}</td></tr>
+        <tr><td><strong>Total Infra</strong></td><td><strong>$${d.infra.total_usd.toFixed(4)}</strong></td></tr>
+      </table>`;
+
+    _mkChart('cost-day-chart', {
+      type: 'bar',
+      data: {
+        labels: d.by_day.map(r=>r.date.slice(5)),
+        datasets: [
+          {label:'API',   data:d.by_day.map(r=>r.api_usd),   backgroundColor:'#6366f1', stack:'s'},
+          {label:'Infra', data:d.by_day.map(r=>r.infra_usd), backgroundColor:'#94a3b8', stack:'s'},
+        ]
+      },
+      options: {scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true}}, plugins:{legend:{position:'bottom'}}, maintainAspectRatio:false}
+    });
+  } catch(e) { if (e.message !== 'Session expired') document.getElementById('cost-status').innerHTML = `<div class="msg-err">Failed: ${e.message}</div>`; }
+}
+
+document.getElementById('cost-load-btn').addEventListener('click', loadCosts);
+
+// ── Recommendations ───────────────────────────────────────────────────────────
+
+async function loadRecommendations() {
+  const btn = document.getElementById('rec-run-btn');
+  btn.disabled = true;
+  document.getElementById('rec-status').style.display = '';
+  document.getElementById('rec-status').textContent = 'Generating recommendations…';
+  document.getElementById('rec-body').style.display = 'none';
+  const body = _dateRange('rec');
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/recommendations`, {method:'POST', body:JSON.stringify(body)});
+    const d   = await res.json();
+    if (!res.ok) { document.getElementById('rec-status').innerHTML = `<div class="msg-err">Error: ${d.detail||JSON.stringify(d)}</div>`; return; }
+    document.getElementById('rec-status').style.display = 'none';
+    document.getElementById('rec-body').style.display   = '';
+
+    const sg = d.signals;
+    document.getElementById('rec-signals').innerHTML = [
+      _statCard('Total Questions', sg.total_questions.toLocaleString()),
+      _statCard('Error Rate', sg.error_rate_pct + '%'),
+      _statCard('Curated Rate', sg.curated_rate_pct + '%'),
+      _statCard('Avg Latency', sg.avg_latency_ms + ' ms'),
+      _statCard('P95 Latency', sg.p95_latency_ms + ' ms'),
+      _statCard('Low Score Qs', sg.low_score_count),
+    ].join('');
+
+    const impactCls = {high:'impact-high', medium:'impact-medium', low:'impact-low'};
+    const actionLabel = {
+      increase_top_k:'Update top-k', lower_score_threshold:'Update score threshold',
+      add_curated:'Add curated answer', improve_content:'Improve content',
+      add_guardrail:'Add guardrail', reduce_chunk_size:'Update chunk size', manual:'Manual action',
+    };
+
+    document.getElementById('rec-list').innerHTML = d.recommendations.map((r,i) => `
+      <div class="rec-card">
+        <div class="rec-body">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <strong>${esc(r.title)}</strong>
+            <span class="rec-impact ${impactCls[r.impact]||''}">${(r.impact||'').toUpperCase()}</span>
+          </div>
+          <div style="font-size:13px;color:var(--text,#374151)">${esc(r.description)}</div>
+        </div>
+        <div>
+          ${r.action && r.action !== 'manual' && r.action !== 'improve_content' && r.action !== 'add_curated' && r.action !== 'add_guardrail'
+            ? `<button class="btn btn-secondary btn-sm" data-rec-action="${r.action}" data-rec-param="${r.action_param??''}" data-rec-idx="${i}">Apply</button>`
+            : r.action === 'improve_content'
+            ? `<button class="btn btn-secondary btn-sm" onclick="showTab('kbs')">Open KBs</button>`
+            : r.action === 'add_curated'
+            ? `<button class="btn btn-secondary btn-sm" onclick="showTab('curated')">Open Curated</button>`
+            : r.action === 'add_guardrail'
+            ? `<button class="btn btn-secondary btn-sm" onclick="showTab('guardrails')">Open Guardrails</button>`
+            : ''}
+        </div>
+      </div>`).join('') || '<div class="muted">No recommendations generated.</div>';
+
+  } catch(e) { if (e.message !== 'Session expired') document.getElementById('rec-status').innerHTML = `<div class="msg-err">Error: ${e.message}</div>`; }
+  finally { btn.disabled = false; }
+}
+
+document.getElementById('rec-list').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-rec-action]');
+  if (!btn) return;
+  const action = btn.dataset.recAction;
+  const param  = parseFloat(btn.dataset.recParam);
+  const msgEl  = document.getElementById('rec-apply-msg');
+  btn.disabled = true;
+  try {
+    const sRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/settings`);
+    const settings = await sRes.json();
+    if (!sRes.ok) { msgEl.textContent = 'Could not load settings'; msgEl.className = 'msg-err'; return; }
+    const patch = {};
+    if (action === 'increase_top_k')         patch.top_k            = isNaN(param) ? Math.min((settings.top_k||8)+2, 20) : Math.round(param);
+    if (action === 'lower_score_threshold')  patch.score_threshold  = isNaN(param) ? 0.0 : param;
+    if (action === 'reduce_chunk_size')      patch.chunk_size       = isNaN(param) ? Math.max((settings.chunk_size||200)-50, 100) : Math.round(param);
+    const pRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/settings`, {method:'PUT', body:JSON.stringify({...settings, ...patch})});
+    if (pRes.ok) { msgEl.textContent = 'Applied ✓'; msgEl.className = 'msg-ok'; setTimeout(()=>{msgEl.textContent='';}, 3000); }
+    else { msgEl.textContent = 'Apply failed'; msgEl.className = 'msg-err'; }
+  } catch(e) { msgEl.textContent = e.message; msgEl.className = 'msg-err'; }
+  finally { btn.disabled = false; }
+});
+
+// ── Gap Analysis ──────────────────────────────────────────────────────────────
+
+async function loadGaplist() {
+  const btn = document.getElementById('gap-run-btn');
+  btn.disabled = true;
+  document.getElementById('gap-status').style.display = '';
+  document.getElementById('gap-status').textContent = 'Analyzing… embedding low-score questions (20–40 s)';
+  document.getElementById('gap-body').style.display = 'none';
+  const body = _dateRange('gap');
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/gaplist`, {method:'POST', body:JSON.stringify(body)});
+    const d   = await res.json();
+    if (!res.ok) { document.getElementById('gap-status').innerHTML = `<div class="msg-err">Error: ${d.detail||JSON.stringify(d)}</div>`; return; }
+    document.getElementById('gap-status').style.display = 'none';
+    document.getElementById('gap-body').style.display   = '';
+
+    document.getElementById('gap-summary').innerHTML = [
+      _statCard('RAG Qs Analyzed', d.total_analyzed.toLocaleString()),
+      _statCard('Low Score Qs', d.low_score_count.toLocaleString()),
+      _statCard('Gaps Found', d.gaps.length),
+    ].join('');
+
+    document.getElementById('gap-list').innerHTML = d.gaps.length
+      ? d.gaps.map(g => `
+        <div class="gap-card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <strong>${esc(g.label)}</strong>
+            <span class="muted" style="font-size:12px;margin-left:auto">${g.volume} questions · avg score ${g.avg_score} · gap score ${g.gap_score}</span>
+          </div>
+          <details><summary style="font-size:13px;color:var(--muted,#6b7280);cursor:pointer">${g.sample_questions.length} sample questions</summary>
+            <ul style="margin:6px 0 0 16px;font-size:13px">${g.sample_questions.map(q=>`<li>${esc(q)}</li>`).join('')}</ul>
+          </details>
+        </div>`).join('')
+      : '<div class="muted">No significant content gaps found in this period.</div>';
+  } catch(e) { if (e.message !== 'Session expired') document.getElementById('gap-status').innerHTML = `<div class="msg-err">Error: ${e.message}</div>`; }
+  finally { btn.disabled = false; }
+}
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
 

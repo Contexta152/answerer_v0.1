@@ -24,6 +24,13 @@ def _row_to_job(row) -> Job:
             embed_tokens=p.get("embed_tokens"),
             embed_batches=p.get("embed_batches"),
             pages_failed=p.get("pages_failed"),
+            queue_size=p.get("queue_size"),
+            pages_store_failed=p.get("pages_store_failed"),
+            pages_skipped_robots=p.get("pages_skipped_robots"),
+            pages_skipped_scope=p.get("pages_skipped_scope"),
+            pages_skipped_http=p.get("pages_skipped_http"),
+            pages_skipped_content=p.get("pages_skipped_content"),
+            stop_reason=p.get("stop_reason"),
         )
     return Job(
         job_id=row["job_id"],

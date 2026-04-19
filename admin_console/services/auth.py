@@ -72,6 +72,6 @@ def issue_impersonation_token(tenant_id: str, email: str) -> str:
         "sub": email,
         "tenant_id": tenant_id,
         "role": "admin",
-        "exp": datetime.now(timezone.utc) + timedelta(seconds=300),  # 5 min
+        "exp": datetime.now(timezone.utc) + timedelta(hours=8),
     }
     return jwt.encode(payload, secret, algorithm=_ALGORITHM)

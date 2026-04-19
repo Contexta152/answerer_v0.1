@@ -102,6 +102,14 @@ class JobProgress(BaseModel):
     embed_tokens: Optional[int] = None
     embed_batches: Optional[int] = None
     pages_failed: Optional[int] = None
+    # crawl-phase diagnostics
+    queue_size: Optional[int] = None
+    pages_store_failed: Optional[int] = None
+    pages_skipped_robots: Optional[int] = None
+    pages_skipped_scope: Optional[int] = None
+    pages_skipped_http: Optional[int] = None
+    pages_skipped_content: Optional[int] = None
+    stop_reason: Optional[str] = None
 
 
 class Job(BaseModel):

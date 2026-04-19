@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import deque
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -17,6 +18,8 @@ from models import Job
 _cancel_requested: set[UUID] = set()
 
 _USER_AGENT = "AnswererBot/1.0"
+
+logger = logging.getLogger(__name__)
 
 
 class _LinkExtractor(HTMLParser):
@@ -109,6 +112,8 @@ async def _fetch_robots(robots_url: str):
 
 async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: int, crawl_delay: float = 0.0) -> None:
     """Background task: BFS crawl from seed_url, store pages, update job progress."""
+    logger.info("Crawl %s starting: seed=%s max_pages=%d", job_id, seed_url, max_pages)
+    pages_crawled = 0
     try:
         await jobs_store.update_job_status(
             job_id, "running", started=datetime.now(timezone.utc)
@@ -125,8 +130,25 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
         rp = await _fetch_robots(f"{base_scheme}://{base_netloc}/robots.txt")
 
         visited: set[str] = set()
+        queued: set[str] = {seed_url}  # tracks everything ever enqueued to prevent duplicates
         queue: deque[str] = deque([seed_url])
-        pages_crawled = 0
+        pages_store_failed = 0
+        pages_skipped_robots = 0
+        pages_skipped_scope = 0
+        pages_skipped_http = 0
+        pages_skipped_content = 0
+
+        def _progress() -> dict:
+            return {
+                "pages_crawled": pages_crawled,
+                "pages_total": None,
+                "queue_size": len(queue),
+                "pages_store_failed": pages_store_failed,
+                "pages_skipped_robots": pages_skipped_robots,
+                "pages_skipped_scope": pages_skipped_scope,
+                "pages_skipped_http": pages_skipped_http,
+                "pages_skipped_content": pages_skipped_content,
+            }
 
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(30.0),
@@ -136,11 +158,13 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
             while queue and pages_crawled < max_pages:
                 if job_id in _cancel_requested:
                     _cancel_requested.discard(job_id)
+                    logger.info("Crawl %s stopped by user after %d pages", job_id, pages_crawled)
                     await jobs_store.update_job_status(
                         job_id,
                         "failed",
                         error="Stopped by user",
                         completed=datetime.now(timezone.utc),
+                        progress=_progress(),
                     )
                     return
 
@@ -151,35 +175,52 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
 
                 parsed = urlparse(current_url)
                 if parsed.netloc != base_netloc:
+                    pages_skipped_scope += 1
                     continue
                 # Only crawl pages at or below the seed path
                 if seed_path_prefix != "/":
                     p_path = parsed.path
                     if p_path != seed_path_prefix and not p_path.startswith(seed_path_prefix + "/"):
+                        pages_skipped_scope += 1
                         continue
                 if not rp.can_fetch(_USER_AGENT, current_url):
+                    logger.debug("Crawl %s: robots.txt blocked %s", job_id, current_url)
+                    pages_skipped_robots += 1
                     continue
 
                 try:
                     resp = await client.get(current_url)
-                except (httpx.RequestError, httpx.HTTPStatusError):
+                except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                    logger.debug("Crawl %s: request error for %s: %s", job_id, current_url, e)
+                    pages_skipped_http += 1
                     continue
 
                 if resp.status_code != 200:
+                    logger.debug("Crawl %s: HTTP %d for %s", job_id, resp.status_code, current_url)
+                    pages_skipped_http += 1
                     continue
 
                 content_type = resp.headers.get("content-type", "")
                 if "text/html" not in content_type and "text/plain" not in content_type:
+                    logger.debug("Crawl %s: skipping content-type=%s for %s", job_id, content_type, current_url)
+                    pages_skipped_content += 1
                     continue
 
                 body = resp.text
-                await jobs_store.insert_crawl_page(job_id, tenant_id, current_url, body)
+                try:
+                    await jobs_store.insert_crawl_page(job_id, tenant_id, current_url, body)
+                except Exception as store_exc:
+                    logger.warning("Crawl %s: failed to store page %s: %s", job_id, current_url, store_exc)
+                    pages_store_failed += 1
+                    continue
+
                 pages_crawled += 1
+                logger.debug("Crawl %s: stored page %d/%d: %s", job_id, pages_crawled, max_pages, current_url)
 
                 await jobs_store.update_job_status(
                     job_id,
                     "running",
-                    progress={"pages_crawled": pages_crawled, "pages_total": None},
+                    progress=_progress(),
                 )
 
                 if crawl_delay > 0:
@@ -188,6 +229,7 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
                 if "text/html" in content_type:
                     extractor = _LinkExtractor()
                     extractor.feed(body)
+                    new_links = 0
                     for href in extractor.links:
                         abs_url = urljoin(current_url, href).split("#")[0]
                         p = urlparse(abs_url)
@@ -195,17 +237,31 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
                             continue
                         if seed_path_prefix != "/" and p.path != seed_path_prefix and not p.path.startswith(seed_path_prefix + "/"):
                             continue
-                        if abs_url not in visited:
+                        if abs_url not in queued:
+                            queued.add(abs_url)
                             queue.append(abs_url)
+                            new_links += 1
+                    if new_links:
+                        logger.debug("Crawl %s: discovered %d new links from %s (queue now %d)", job_id, new_links, current_url, len(queue))
 
+        stop_reason = "max_pages reached" if pages_crawled >= max_pages else "queue exhausted"
+        logger.info(
+            "Crawl %s completed: %s. crawled=%d store_failed=%d skipped_robots=%d skipped_scope=%d skipped_http=%d skipped_content=%d",
+            job_id, stop_reason, pages_crawled, pages_store_failed,
+            pages_skipped_robots, pages_skipped_scope, pages_skipped_http, pages_skipped_content,
+        )
+        final_progress = _progress()
+        final_progress["pages_total"] = pages_crawled
+        final_progress["stop_reason"] = stop_reason
         await jobs_store.update_job_status(
             job_id,
             "completed",
             completed=datetime.now(timezone.utc),
-            progress={"pages_crawled": pages_crawled, "pages_total": pages_crawled},
+            progress=final_progress,
         )
 
     except Exception as exc:
+        logger.exception("Crawl %s failed with unhandled exception after %d pages", job_id, pages_crawled)
         try:
             await jobs_store.update_job_status(
                 job_id,
