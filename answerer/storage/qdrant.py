@@ -25,7 +25,7 @@ async def _get_client() -> AsyncQdrantClient:
     global _client
     if _client is None:
         if url := os.environ.get("QDRANT_URL"):
-            _client = AsyncQdrantClient(url=url)
+            _client = AsyncQdrantClient(url=url, timeout=60)
         else:
             path = os.environ["QDRANT_PATH"]
             _client = AsyncQdrantClient(path=path)
