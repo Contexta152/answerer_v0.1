@@ -36,7 +36,7 @@ https://github.com/Contexta152/answerer_v0.1
 | Key | Value |
 |---|---|
 | Embeddings model | `text-embedding-004` |
-| LLM model | `gemini-1.5-flash` (env: `VERTEX_LLM_MODEL`) |
+| LLM model | `gemini-2.0-flash-001` (env: `VERTEX_LLM_MODEL`) |
 | Location | `us-central1` |
 
 ---
@@ -122,6 +122,17 @@ Qdrant runs on a dedicated GCE VM (`qdrant-server`, `10.128.0.3:6333`), shared a
 | `QDRANT_URL` | Cloud Run env | Qdrant server URL (`http://10.128.0.3:6333`) |
 | `ADMIN_JWT_SECRET` | Secret Manager (`admin-console-jwt-secret`) | Validates Admin Console JWT tokens |
 
+### Worker Service Environment Variables
+
+| Variable | Source | Description |
+|---|---|---|
+| `DATABASE_URL` | Secret Manager (`answerer-db-url`) | Postgres DSN |
+| `SERVICE_KEY` | Secret Manager (`service-key`) | Validates Payment Service requests |
+| `JWT_SECRET` | Secret Manager (`jwt-secret`) | JWT secret |
+| `QDRANT_URL` | Cloud Run env | Qdrant server URL (`http://10.128.0.3:6333`) |
+| `GOOGLE_CLOUD_PROJECT` | Cloud Run env | GCP project ID |
+| `GOOGLE_CLOUD_LOCATION` | Cloud Run env | Vertex AI region |
+
 ---
 
 ## Cloud Run Services
@@ -132,6 +143,7 @@ Qdrant runs on a dedicated GCE VM (`qdrant-server`, `10.128.0.3:6333`), shared a
 | `admin-console` | `https://admin-console-848760828618.us-central1.run.app` | Per-tenant admin UI |
 | `vendor-console` | `https://vendor-console-848760828618.us-central1.run.app` | Super-admin UI |
 | `widget-gateway` | `https://widget-gateway-848760828618.us-central1.run.app` | Public widget endpoint |
+| `worker` | (no public URL) | Background job processor (crawl + index jobs) |
 
 ---
 
@@ -151,6 +163,24 @@ Qdrant runs on a dedicated GCE VM (`qdrant-server`, `10.128.0.3:6333`), shared a
 
 ---
 
+## Deployment
+
+```bash
+# Answerer
+gcloud builds submit answerer/ --tag us-central1-docker.pkg.dev/project-3a1ab238-6b95-4034-8c6/answerer/answerer && gcloud run deploy answerer --image us-central1-docker.pkg.dev/project-3a1ab238-6b95-4034-8c6/answerer/answerer --region us-central1
+
+# Worker (shares answerer image, different command)
+gcloud run deploy worker --image us-central1-docker.pkg.dev/project-3a1ab238-6b95-4034-8c6/answerer/answerer --region us-central1 --command python --args worker_main.py --add-cloudsql-instances project-3a1ab238-6b95-4034-8c6:us-central1:answerer-db --set-secrets DATABASE_URL=answerer-db-url:latest,SERVICE_KEY=service-key:latest,JWT_SECRET=jwt-secret:latest --set-env-vars QDRANT_URL=http://10.128.0.3:6333,GOOGLE_CLOUD_PROJECT=project-3a1ab238-6b95-4034-8c6,GOOGLE_CLOUD_LOCATION=us-central1
+
+# Admin Console
+gcloud builds submit admin_console/ --tag us-central1-docker.pkg.dev/project-3a1ab238-6b95-4034-8c6/answerer/admin-console && gcloud run deploy admin-console --image us-central1-docker.pkg.dev/project-3a1ab238-6b95-4034-8c6/answerer/admin-console --region us-central1
+
+# Vendor Console
+gcloud builds submit vendor_console/ --tag us-central1-docker.pkg.dev/project-3a1ab238-6b95-4034-8c6/answerer/vendor-console && gcloud run deploy vendor-console --image us-central1-docker.pkg.dev/project-3a1ab238-6b95-4034-8c6/answerer/vendor-console --region us-central1
+```
+
+---
+
 ## Local Development
 
 ```bash
@@ -159,6 +189,9 @@ Qdrant runs on a dedicated GCE VM (`qdrant-server`, `10.128.0.3:6333`), shared a
 
 # Run stub servers
 docker compose -f docker-compose.stubs.yml up
+
+# Run answerer locally (uses local postgres, QDRANT_URL points at prod Qdrant VM)
+docker compose up -d --build answerer
 ```
 
 ---

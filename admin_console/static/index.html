@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Console</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='black'/><text x='50' y='68' font-family='sans-serif' font-size='56' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
-  <link rel="stylesheet" href="/static/style.css?v=2">
+  <link rel="stylesheet" href="/static/style.css?v=4">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     .an-row{display:flex;gap:16px;flex-wrap:wrap}.an-row .card{flex:1;min-width:260px}
@@ -152,7 +152,7 @@
     <div id="tab-kbs" class="tab-panel">
       <div class="page-header">
         <h1>KnowledgeBases</h1>
-        <p>Crawl and index documentation sites to power RAG answers.</p>
+        <p>Crawl and vectorize documentation sites to power RAG answers.</p>
       </div>
 
       <div class="card" id="kbs-add-card">
@@ -170,7 +170,18 @@
           <select id="kbs-max-pages">
             <option value="10" selected>10</option>
             <option value="100">100</option>
+            <option value="500">500</option>
             <option value="999999">ALL</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="kbs-max-depth">Max crawl depth</label>
+          <select id="kbs-max-depth">
+            <option value="1">1 — seed page only</option>
+            <option value="2">2 — one level of links</option>
+            <option value="3" selected>3 — recommended</option>
+            <option value="5">5 — deep</option>
+            <option value="999">Unlimited</option>
           </select>
         </div>
         <div class="form-group">
@@ -178,7 +189,8 @@
           <input type="range" id="kbs-crawl-delay" min="0" max="1" step="0.1" value="0">
         </div>
         <div class="kbs-btn-wrap">
-          <button class="btn btn-primary" id="kbs-create-btn">Crawl &amp; Index</button>
+          <button class="btn btn-primary" id="kbs-create-btn">Crawl</button>
+          <button class="btn btn-primary" id="kbs-vectorize-btn" style="display:none">Vectorize</button>
         </div>
         <div id="kbs-create-msg" class="create-msg"></div>
       </div>
@@ -986,9 +998,102 @@ function stopKBPoll() {
   if (_kbPollTimer) { clearInterval(_kbPollTimer); _kbPollTimer = null; }
 }
 
+const _crawlStatusLabel = {pending: 'Crawl pending', running: 'Crawling…', completed: 'Crawled', failed: 'Crawl failed'};
+const _crawlStatusClass = {pending: 'badge-yellow', running: 'badge-blue', completed: 'badge-green', failed: 'badge-red'};
+const _idxStatusLabel   = {pending: 'Vectorize pending', running: 'Vectorizing…', completed: 'Vectorized', failed: 'Vectorize failed'};
+const _idxStatusClass   = {pending: 'badge-yellow', running: 'badge-blue', completed: 'badge-green', failed: 'badge-red'};
+
 function kbIsActive(kb) {
   return kb.status === 'running' || kb.status === 'pending' ||
          kb.index_status === 'running' || kb.index_status === 'pending';
+}
+
+function kbCardStateClass(kb) {
+  if (kbIsActive(kb)) return 'kb-card--active';
+  if (kb.status === 'failed' || kb.index_status === 'failed') return 'kb-card--error';
+  if (kb.index_status === 'completed') return 'kb-card--done';
+  if (kb.status === 'completed') return 'kb-card--crawled';
+  return '';
+}
+
+function kbStatusInnerHtml(kb, indexDetail = null) {
+  const p  = kb.progress || {};
+  const ip = indexDetail?.progress || {};
+
+  const crawlActive = kb.status === 'running' || kb.status === 'pending';
+  const crawlDone   = kb.status === 'completed';
+  const crawlFailed = kb.status === 'failed';
+  const indexActive = kb.index_status === 'running' || kb.index_status === 'pending';
+  const indexDone   = kb.index_status === 'completed';
+  const indexFailed = kb.index_status === 'failed';
+
+  const crawlBadge = `<span class="badge ${_crawlStatusClass[kb.status]||'badge-gray'}">${_crawlStatusLabel[kb.status]||kb.status}</span>`;
+  const idxBadge   = `<span class="badge ${kb.index_status ? (_idxStatusClass[kb.index_status]||'badge-gray') : 'badge-gray'}">${kb.index_status ? (_idxStatusLabel[kb.index_status]||kb.index_status) : 'Not vectorized'}</span>`;
+
+  // Crawl bar
+  let crawlFillClass = 'kb-bar-fill';
+  let crawlFillStyle = 'width:0%';
+  if (crawlDone)        { crawlFillClass += ' kb-bar-fill--done';     crawlFillStyle = 'width:100%'; }
+  else if (crawlFailed) { crawlFillClass += ' kb-bar-fill--error';    crawlFillStyle = ''; }
+  else if (crawlActive) { crawlFillClass += ' kb-bar-fill--animated'; crawlFillStyle = ''; }
+
+  const pagesCrawled = p.pages_crawled;
+  const crawlMeta = [];
+  if (pagesCrawled != null)   crawlMeta.push(`${Number(pagesCrawled).toLocaleString()} pages`);
+  if (crawlActive && p.queue_size != null) crawlMeta.push(`${Number(p.queue_size).toLocaleString()} queued`);
+  if (p.pages_skipped_http)   crawlMeta.push(`${p.pages_skipped_http} HTTP err`);
+  if (p.pages_skipped_robots) crawlMeta.push(`${p.pages_skipped_robots} robots`);
+  if (p.pages_skipped_scope)  crawlMeta.push(`${p.pages_skipped_scope} out of scope`);
+  if (p.pages_store_failed)   crawlMeta.push(`<span class="warn">${p.pages_store_failed} store err</span>`);
+  if (crawlDone && p.stop_reason === 'max_pages reached') crawlMeta.push('limit reached');
+  else if (crawlDone && p.stop_reason === 'queue exhausted') crawlMeta.push('all pages found');
+  if (crawlFailed && kb.error) crawlMeta.push(`<span class="err">${esc(kb.error)}</span>`);
+
+  // Index bar
+  const idxIndexed = ip.pages_indexed ?? kb.pages_indexed ?? 0;
+  const idxTotal   = ip.pages_total ?? null;
+  let   idxPct     = 0;
+  if (indexDone) idxPct = 100;
+  else if (indexActive && idxTotal) idxPct = Math.min(100, Math.round(idxIndexed / idxTotal * 100));
+
+  let idxFillClass = 'kb-bar-fill';
+  let idxFillStyle = `width:${idxPct}%`;
+  if (indexDone)        { idxFillClass += ' kb-bar-fill--done';  idxFillStyle = 'width:100%'; }
+  else if (indexFailed) { idxFillClass += ' kb-bar-fill--error'; idxFillStyle = ''; }
+
+  const idxCountLabel = idxTotal
+    ? `${Number(idxIndexed).toLocaleString()} / ${Number(idxTotal).toLocaleString()} pages`
+    : (idxIndexed ? `${Number(idxIndexed).toLocaleString()} pages` : '');
+  const idxMeta = [];
+  if (idxCountLabel) idxMeta.push(idxCountLabel);
+  const chunks  = ip.chunks_created   ?? null;
+  const vectors = ip.vectors_upserted ?? null;
+  const tokens  = ip.embed_tokens ?? kb.embed_tokens ?? null;
+  if (chunks  != null) idxMeta.push(`${Number(chunks).toLocaleString()} chunks`);
+  if (vectors != null && vectors !== chunks) idxMeta.push(`${Number(vectors).toLocaleString()} vectors`);
+  if (tokens  != null) idxMeta.push(`${Number(tokens).toLocaleString()} tokens`);
+  if (ip.pages_failed) idxMeta.push(`<span class="warn">${ip.pages_failed} failed</span>`);
+  if (indexFailed && indexDetail?.error) idxMeta.push(`<span class="err">${esc(indexDetail.error)}</span>`);
+
+  return `<div class="kb-badges">${crawlBadge}${idxBadge}</div>
+    <div class="kb-phases">
+      <div class="kb-phase">
+        <div class="kb-phase-hd">
+          <span class="kb-phase-label">Crawl</span>
+          ${pagesCrawled != null ? `<span class="kb-phase-count">${Number(pagesCrawled).toLocaleString()} pages</span>` : ''}
+        </div>
+        <div class="kb-bar"><div class="${crawlFillClass}" ${crawlFillStyle ? `style="${crawlFillStyle}"` : ''}></div></div>
+        ${crawlMeta.length ? `<div class="kb-phase-meta">${crawlMeta.join(' · ')}</div>` : ''}
+      </div>
+      <div class="kb-phase">
+        <div class="kb-phase-hd">
+          <span class="kb-phase-label">Vectorize</span>
+          ${idxCountLabel ? `<span class="kb-phase-count">${idxCountLabel}</span>` : ''}
+        </div>
+        <div class="kb-bar"><div class="${idxFillClass}" style="${idxFillStyle}"></div></div>
+        ${idxMeta.length ? `<div class="kb-phase-meta">${idxMeta.join(' · ')}</div>` : ''}
+      </div>
+    </div>`;
 }
 
 function kbLogHtml(kb, indexDetail) {
@@ -1024,10 +1129,10 @@ function kbLogHtml(kb, indexDetail) {
 
   if (indexActive || indexDone || indexFailed) {
     const icon = indexActive ? '⟳' : indexDone ? '✓' : '✗';
-    lines.push(`<div class="kb-log-title">${icon} Index</div>`);
+    lines.push(`<div class="kb-log-title">${icon} Vectorize</div>`);
     const idxPages = ip.pages_indexed ?? kb.pages_indexed;
     const idxTotal = ip.pages_total;
-    if (idxPages != null) lines.push(entry(`${Number(idxPages).toLocaleString()}${idxTotal ? ' / ' + Number(idxTotal).toLocaleString() : ''} pages indexed`));
+    if (idxPages != null) lines.push(entry(`${Number(idxPages).toLocaleString()}${idxTotal ? ' / ' + Number(idxTotal).toLocaleString() : ''} pages vectorized`));
     if (ip.chunks_created   != null) lines.push(entry(`${Number(ip.chunks_created).toLocaleString()} chunks`));
     if (ip.vectors_upserted != null) lines.push(entry(`${Number(ip.vectors_upserted).toLocaleString()} vectors`));
     const tokens = ip.embed_tokens ?? kb.embed_tokens;
@@ -1036,7 +1141,7 @@ function kbLogHtml(kb, indexDetail) {
     if (indexFailed && indexDetail?.error) lines.push(entry(indexDetail.error, 'err'));
   }
 
-  if (!lines.length) return '<span class="kb-log-empty">No activity yet.</span>';
+  if (!lines.length) return '';
 
   const now = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   return lines.join('') + `<div class="kb-log-updated">Updated ${now}</div>`;
@@ -1049,19 +1154,15 @@ async function refreshKBProgress() {
     if (!res.ok) return;
     const { items = [] } = await res.json();
 
-    let needReload  = false;
     let stillActive = false;
 
     for (const kb of items) {
       const active = kbIsActive(kb);
       if (active) stillActive = true;
-      if (_runningKBIds.has(kb.job_id) && !active) needReload = true;
-      if (active) _runningKBIds.add(kb.job_id);
 
       const logEl    = document.getElementById(`kb-log-${kb.job_id}`);
       const statusEl = document.getElementById(`kb-status-${kb.job_id}`);
-      const errEl    = document.getElementById(`kb-err-${kb.job_id}`);
-      if (!logEl) continue;
+      if (!logEl || !statusEl) continue;
 
       let indexDetail = null;
       const indexActive = kb.index_status === 'running' || kb.index_status === 'pending';
@@ -1072,22 +1173,45 @@ async function refreshKBProgress() {
         } catch(_) {}
       }
 
-      logEl.innerHTML = kbLogHtml(kb, indexDetail);
+      // Surgical updates — no card rebuild, no flicker
+      statusEl.innerHTML = kbStatusInnerHtml(kb, indexDetail);
+      logEl.innerHTML    = kbLogHtml(kb, indexDetail);
 
-      if (errEl) {
-        errEl.innerHTML = kb.error ? `<span class="kb-error-text">${esc(kb.error)}</span>` : '';
+      const card = document.getElementById(`kb-card-${kb.job_id}`);
+      if (card) card.className = `card kb-card ${kbCardStateClass(kb)}`;
+
+      const stopBtn = document.querySelector(`#kb-card-${kb.job_id} [data-action="kb-stop"]`);
+      if (stopBtn) {
+        stopBtn.style.display = active ? '' : 'none';
+        stopBtn.dataset.indexId = kb.index_job_id || '';
+      }
+
+      const vectorizeBtn = document.querySelector(`#kb-card-${kb.job_id} [data-action="kb-vectorize"]`);
+      if (vectorizeBtn) vectorizeBtn.style.display = (kb.status === 'completed' && !kb.index_job_id) ? '' : 'none';
+
+      const updateBtn = document.querySelector(`#kb-card-${kb.job_id} [data-action="kb-update"]`);
+      if (updateBtn) {
+        const canUpdate = kb.status === 'completed';
+        updateBtn.disabled = !canUpdate;
+        updateBtn.title    = canUpdate ? 'Re-crawl and re-vectorize this source' : 'Crawl must be completed first';
+      }
+
+      const deleteBtn = document.querySelector(`#kb-card-${kb.job_id} [data-action="kb-delete"]`);
+      if (deleteBtn) {
+        deleteBtn.disabled = active;
+        deleteBtn.title    = active ? 'Stop the job before deleting' : '';
       }
     }
 
-    if (needReload) { _runningKBIds.clear(); stopKBPoll(); loadKBs(); }
-    else if (!stillActive) stopKBPoll();
+    if (!stillActive) { _runningKBIds.clear(); stopKBPoll(); }
   } catch(_) {}
 }
 
 async function loadKBs() {
   const el = document.getElementById('kbs-list');
   if (!el) return;
-  el.className = 'loading'; el.textContent = 'Loading…';
+  const silent = el.firstElementChild && !el.classList.contains('loading') && !el.classList.contains('msg-err');
+  if (!silent) { el.className = 'loading'; el.textContent = 'Loading…'; }
   try {
     const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawls`);
     if (!res.ok) { el.className = 'msg-err'; el.textContent = 'Failed to load knowledgebases.'; return; }
@@ -1105,47 +1229,36 @@ async function loadKBs() {
       return;
     }
 
-    const crawlStatusLabel = {pending: 'Crawl pending', running: 'Crawling…', completed: 'Crawled', failed: 'Crawl failed'};
-    const crawlStatusClass = {pending: 'badge-yellow', running: 'badge-blue', completed: 'badge-green', failed: 'badge-red'};
-    const idxStatusLabel   = {pending: 'Index pending', running: 'Indexing…', completed: 'Indexed', failed: 'Index failed'};
-    const idxStatusClass   = {pending: 'badge-yellow', running: 'badge-blue', completed: 'badge-green', failed: 'badge-red'};
-
     el.innerHTML = `<div class="kbs-count-label">${activeCount} / 5 knowledgebases used</div>` +
       items.map(kb => {
-        const pagesCrawled = kb.progress?.pages_crawled ?? '—';
-        const pagesIndexed = kb.pages_indexed ?? '—';
-        const maxPages     = kb.progress?.pages_total ?? null;
-        const crawledOn    = kb.completed      ? fmtDate(kb.completed)           : (kb.status === 'running'       ? 'in progress…' : '—');
-        const indexedOn    = kb.index_completed ? fmtDate(kb.index_completed)    : (kb.index_status === 'running' ? 'in progress…' : '—');
-        const tokens       = kb.embed_tokens != null ? `${kb.embed_tokens.toLocaleString()} embed tokens` : '';
-
-        const crawlBadge = `<span class="badge ${crawlStatusClass[kb.status]||'badge-gray'}">${crawlStatusLabel[kb.status]||kb.status}</span>`;
-        const idxBadge   = kb.index_status ? `<span class="badge ${idxStatusClass[kb.index_status]||'badge-gray'}">${idxStatusLabel[kb.index_status]||kb.index_status}</span>` : '';
-
-        const canUpdate  = kb.status === 'completed';
+        const maxPages    = kb.progress?.pages_total ?? null;
+        const canUpdate   = kb.status === 'completed';
         const displayName = kb.name || '';
+        const logHtml     = kbLogHtml(kb, null);
 
-        return `<div class="card kb-card" id="kb-card-${esc(kb.job_id)}">
-          <div class="kb-col-info">
-            <div class="kb-card-heading">${esc(displayName || '—')}</div>
-            <div class="kb-url">${esc(kb.url||'Unknown URL')}</div>
-            <div class="kb-actions">
-              <button class="btn btn-secondary btn-sm" data-action="kb-update" data-id="${esc(kb.job_id)}" data-url="${esc(kb.url)}" data-name="${esc(displayName)}" data-maxpages="${maxPages||10}" ${canUpdate?'':'disabled'} title="${canUpdate?'Re-crawl and re-index this source':'Crawl must be completed first'}">Update</button>
-              <button class="btn btn-danger btn-sm" data-action="kb-delete" data-id="${esc(kb.job_id)}">Delete</button>
+        return `<div class="card kb-card ${kbCardStateClass(kb)}" id="kb-card-${esc(kb.job_id)}">
+          <div class="kb-header">
+            <div class="kb-header-left">
+              <div class="kb-name">${esc(displayName || '—')}</div>
+              <div class="kb-url">${esc(kb.url||'Unknown URL')}</div>
             </div>
-            <div id="kb-msg-${esc(kb.job_id)}" class="kb-msg"></div>
+            <div class="kb-header-right">
+              <button class="btn btn-warning btn-sm" data-action="kb-stop" data-id="${esc(kb.job_id)}" data-index-id="${esc(kb.index_job_id||'')}" style="${kbIsActive(kb)?'':'display:none'}" title="Stop current job">Stop</button>
+              <button class="btn btn-primary btn-sm" data-action="kb-vectorize" data-id="${esc(kb.job_id)}" style="${(kb.status==='completed'&&!kb.index_job_id)?'':'display:none'}" title="Vectorize crawled pages">Vectorize</button>
+              <button class="btn btn-secondary btn-sm" data-action="kb-update" data-id="${esc(kb.job_id)}" data-url="${esc(kb.url)}" data-name="${esc(displayName)}" data-maxpages="${maxPages||10}" ${canUpdate?'':'disabled'} title="${canUpdate?'Re-crawl and re-vectorize this source':'Crawl must be completed first'}">Update</button>
+              <button class="btn btn-danger btn-sm" data-action="kb-delete" data-id="${esc(kb.job_id)}" ${kbIsActive(kb)?'disabled':''} title="${kbIsActive(kb)?'Stop the job before deleting':''}">Delete</button>
+            </div>
           </div>
-          <div class="kb-col-status" id="kb-status-${esc(kb.job_id)}">
-            <div class="kb-status-row">${crawlBadge}<span>${pagesCrawled}${maxPages ? ' / '+maxPages : ''} pages crawled${crawledOn !== '—' ? ' · '+crawledOn : ''}</span></div>
-            <div class="kb-index-row">${idxBadge || '<span class="badge badge-gray">not indexed</span>'}<span>${pagesIndexed} pages indexed${indexedOn !== '—' ? ' · '+indexedOn : ''}</span></div>
-            ${tokens ? `<div class="kb-tokens-label">${tokens}</div>` : ''}
-            <div id="kb-err-${esc(kb.job_id)}">${kb.error ? `<span class="kb-error-text">${esc(kb.error)}</span>` : ''}</div>
-          </div>
-          <div class="kb-col-log" id="kb-log-${esc(kb.job_id)}">${kbLogHtml(kb, null)}</div>
+          <div class="kb-status-body" id="kb-status-${esc(kb.job_id)}">${kbStatusInnerHtml(kb)}</div>
+          <div class="kb-log-section" id="kb-log-${esc(kb.job_id)}">${logHtml}</div>
+          <details class="kb-pages-details" id="kb-pages-details-${esc(kb.job_id)}">
+            <summary class="kb-pages-summary" onclick="loadKBPages(event, '${esc(kb.job_id)}')">Pages crawled</summary>
+            <div class="kb-pages-list" id="kb-pages-list-${esc(kb.job_id)}"></div>
+          </details>
+          <div id="kb-msg-${esc(kb.job_id)}" class="kb-msg-area"></div>
         </div>`;
       }).join('');
 
-    // Start polling if any job is active
     if (items.some(kbIsActive)) {
       items.forEach(kb => { if (kbIsActive(kb)) _runningKBIds.add(kb.job_id); });
       startKBPoll();
@@ -1159,15 +1272,67 @@ document.getElementById('main-content').addEventListener('click', async e => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   const action = btn.dataset.action;
-  if (action === 'kb-delete') await deleteKB(btn.dataset.id);
-  else if (action === 'kb-update') await updateKB(btn.dataset.id, btn.dataset.url, parseInt(btn.dataset.maxpages)||10, btn.dataset.name||'', parseFloat(document.getElementById('kbs-crawl-delay').value)||0);
+  if (action === 'kb-stop') await stopKB(btn.dataset.id, btn.dataset.indexId);
+  else if (action === 'kb-delete') await deleteKB(btn.dataset.id);
+  else if (action === 'kb-vectorize') await vectorizeKB(btn.dataset.id);
+  else if (action === 'kb-update') await updateKB(btn.dataset.id, btn.dataset.url, parseInt(btn.dataset.maxpages)||10, btn.dataset.name||'', parseFloat(document.getElementById('kbs-crawl-delay').value)||0, parseInt(document.getElementById('kbs-max-depth').value)||3);
 });
 
+async function loadKBPages(e, crawlJobId) {
+  const details = document.getElementById(`kb-pages-details-${crawlJobId}`);
+  const listEl  = document.getElementById(`kb-pages-list-${crawlJobId}`);
+  if (!listEl) return;
+  // Only fetch once; subsequent opens reuse the cached list
+  if (listEl.dataset.loaded === '1') return;
+  listEl.innerHTML = '<div class="kb-pages-loading">Loading…</div>';
+  try {
+    const res  = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${crawlJobId}/pages`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed');
+    const items = data.items || [];
+    if (!items.length) {
+      listEl.innerHTML = '<div class="kb-pages-empty">No pages crawled yet.</div>';
+    } else {
+      listEl.innerHTML = `<div class="kb-pages-count">${items.length.toLocaleString()} pages</div>` +
+        items.map(p => `<div class="kb-page-row"><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a></div>`).join('');
+    }
+    listEl.dataset.loaded = '1';
+  } catch(err) {
+    listEl.innerHTML = `<div class="kb-pages-empty msg-err">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+async function stopKB(crawlJobId, indexJobId) {
+  const msgEl = document.getElementById(`kb-msg-${crawlJobId}`);
+  const setMsg = (txt, cls='') => { if (msgEl) { msgEl.className = `kb-msg-area${cls ? ' '+cls : ''}`; msgEl.textContent = txt; } };
+  setMsg('Stopping…');
+  try {
+    await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${crawlJobId}/stop`, {method: 'POST'});
+    if (indexJobId) await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/index/${indexJobId}/stop`, {method: 'POST'});
+    setMsg('Stop requested — job will halt shortly.');
+  } catch(e) { setMsg(`Stop failed: ${e.message}`, 'msg-err'); }
+}
+
+async function vectorizeKB(crawlJobId) {
+  const msgEl = document.getElementById(`kb-msg-${crawlJobId}`);
+  const setMsg = (txt, cls='') => { if (msgEl) { msgEl.className = `kb-msg-area${cls ? ' '+cls : ''}`; msgEl.textContent = txt; } };
+  setMsg('Vectorizing…');
+  try {
+    const idxRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/index`, {method: 'POST', body: JSON.stringify({crawl_job_id: crawlJobId})});
+    const idxJob = await idxRes.json();
+    if (!idxRes.ok) { setMsg(`Vectorize failed: ${idxJob.detail||JSON.stringify(idxJob)}`, 'msg-err'); return; }
+    const idxFinal = await pollJob(idxJob.job_id, 'index', j => { const p=j.progress; setMsg(`Vectorizing… ${p?p.pages_indexed+' / '+p.pages_total+' pages':''}`); loadKBs(); });
+    const tokens = idxFinal?.progress?.embed_tokens;
+    setMsg(`Vectorized${tokens != null ? ' · '+tokens.toLocaleString()+' embed tokens' : ''}.`, 'msg-ok');
+    loadKBs();
+  } catch(e) { setMsg(`Vectorize failed: ${e.message}`, 'msg-err'); }
+}
+
 async function deleteKB(crawlJobId) {
-  if (!confirm('Delete this knowledgebase? All indexed vectors will be removed.')) return;
+  if (!confirm('Delete this knowledgebase? All vectorized content will be removed.')) return;
   const msgEl = document.getElementById(`kb-msg-${crawlJobId}`);
   const card  = document.getElementById(`kb-card-${crawlJobId}`);
-  if (msgEl) { msgEl.className = ''; msgEl.textContent = 'Deleting…'; }
+  if (msgEl) { msgEl.className = 'kb-msg-area'; msgEl.textContent = 'Deleting…'; }
   try {
     const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${crawlJobId}`, {method: 'DELETE'});
     if (res.ok || res.status === 204) {
@@ -1175,21 +1340,21 @@ async function deleteKB(crawlJobId) {
       loadKBs();
     } else {
       const d = await res.json().catch(() => ({}));
-      if (msgEl) { msgEl.className = 'msg-err'; msgEl.textContent = `Delete failed: ${d.detail||JSON.stringify(d)}`; }
+      if (msgEl) { msgEl.className = 'kb-msg-area msg-err'; msgEl.textContent = `Delete failed: ${d.detail||JSON.stringify(d)}`; }
     }
-  } catch(e) { if (msgEl) { msgEl.className = 'msg-err'; msgEl.textContent = `Error: ${e.message}`; } }
+  } catch(e) { if (msgEl) { msgEl.className = 'kb-msg-area msg-err'; msgEl.textContent = `Error: ${e.message}`; } }
 }
 
-async function updateKB(oldCrawlId, url, maxPages, name, crawlDelay=0) {
+async function updateKB(oldCrawlId, url, maxPages, name, crawlDelay=0, maxDepth=3) {
   const msgEl = document.getElementById(`kb-msg-${oldCrawlId}`);
   const btns  = document.querySelectorAll(`#kb-card-${oldCrawlId} button`);
   btns.forEach(b => b.disabled = true);
-  const setMsg = (txt, cls='') => { if (msgEl) { msgEl.className = cls; msgEl.textContent = txt; } };
+  const setMsg = (txt, cls='') => { if (msgEl) { msgEl.className = `kb-msg-area${cls ? ' '+cls : ''}`; msgEl.textContent = txt; } };
 
   try {
     // 1. Start new crawl
     setMsg('Starting re-crawl…');
-    const crawlRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl`, {method: 'POST', body: JSON.stringify({url, max_pages: maxPages, name: name||undefined, crawl_delay: crawlDelay})});
+    const crawlRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl`, {method: 'POST', body: JSON.stringify({url, max_pages: maxPages, max_depth: maxDepth, name: name||undefined, crawl_delay: crawlDelay})});
     const crawlJob = await crawlRes.json();
     if (!crawlRes.ok) { setMsg(`Crawl failed: ${crawlJob.detail||JSON.stringify(crawlJob)}`, 'msg-err'); btns.forEach(b => b.disabled=false); return; }
     const newCrawlId = crawlJob.job_id;
@@ -1204,13 +1369,13 @@ async function updateKB(oldCrawlId, url, maxPages, name, crawlDelay=0) {
     await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${oldCrawlId}`, {method: 'DELETE'});
 
     // 4. Start new index
-    setMsg('Indexing new content…');
+    setMsg('Vectorizing new content…');
     const idxRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/index`, {method: 'POST', body: JSON.stringify({crawl_job_id: newCrawlId})});
     const idxJob = await idxRes.json();
-    if (!idxRes.ok) { setMsg(`Index failed: ${idxJob.detail||JSON.stringify(idxJob)}`, 'msg-err'); btns.forEach(b => b.disabled=false); return; }
+    if (!idxRes.ok) { setMsg(`Vectorize failed: ${idxJob.detail||JSON.stringify(idxJob)}`, 'msg-err'); btns.forEach(b => b.disabled=false); return; }
 
     // 5. Poll index
-    const idxFinal = await pollJob(idxJob.job_id, 'index', j => { const p=j.progress; setMsg(`Indexing… ${p?p.pages_indexed+' / '+p.pages_total+' pages':''}`); });
+    const idxFinal = await pollJob(idxJob.job_id, 'index', j => { const p=j.progress; setMsg(`Vectorizing… ${p?p.pages_indexed+' / '+p.pages_total+' pages':''}`); });
     const tokens = idxFinal?.progress?.embed_tokens;
     setMsg(`Updated${tokens != null ? ' · '+tokens.toLocaleString()+' embed tokens' : ''}.`, 'msg-ok');
     loadKBs();
@@ -1225,6 +1390,7 @@ document.getElementById('kbs-create-btn').addEventListener('click', async () => 
   const name       = document.getElementById('kbs-name').value.trim();
   const url        = document.getElementById('kbs-url').value.trim();
   const maxPages   = parseInt(document.getElementById('kbs-max-pages').value) || 10;
+  const maxDepth   = parseInt(document.getElementById('kbs-max-depth').value) || 3;
   const crawlDelay = parseFloat(document.getElementById('kbs-crawl-delay').value) || 0;
   const msg      = document.getElementById('kbs-create-msg');
   const btn      = document.getElementById('kbs-create-btn');
@@ -1232,26 +1398,46 @@ document.getElementById('kbs-create-btn').addEventListener('click', async () => 
   btn.disabled = true; msg.className = 'create-msg';
   try {
     msg.textContent = 'Starting crawl…';
-    const crawlRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl`, {method: 'POST', body: JSON.stringify({url, max_pages: maxPages, name: name||undefined, crawl_delay: crawlDelay})});
+    const crawlRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl`, {method: 'POST', body: JSON.stringify({url, max_pages: maxPages, max_depth: maxDepth, name: name||undefined, crawl_delay: crawlDelay})});
     const crawlJob = await crawlRes.json();
     if (!crawlRes.ok) { msg.className = 'msg-err create-msg'; msg.textContent = `Crawl failed: ${crawlJob.detail||JSON.stringify(crawlJob)}`; btn.disabled=false; return; }
     const crawlId = crawlJob.job_id;
     await pollJob(crawlId, 'crawl', j => { const p=j.progress; msg.textContent=`Crawling… ${p?p.pages_crawled+' pages':''}`; loadKBs(); });
     const finalCrawl = await (await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${crawlId}`)).json();
     if (finalCrawl.status === 'failed') { msg.className = 'msg-err create-msg'; msg.textContent=`Crawl failed: ${finalCrawl.error||'unknown error'}`; btn.disabled=false; loadKBs(); return; }
-    msg.textContent = 'Crawl complete. Starting indexing…';
-    const indexRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/index`, {method: 'POST', body: JSON.stringify({crawl_job_id: crawlId})});
-    const indexJob = await indexRes.json();
-    if (!indexRes.ok) { msg.className = 'msg-err create-msg'; msg.textContent=`Index failed: ${indexJob.detail||JSON.stringify(indexJob)}`; btn.disabled=false; return; }
-    const idxFinal = await pollJob(indexJob.job_id, 'index', j => { const p=j.progress; msg.textContent=`Indexing… ${p?p.pages_indexed+' / '+p.pages_total+' pages':''}`; });
+    const crawlPages = finalCrawl.progress?.pages_crawled ?? finalCrawl.progress?.pages_total ?? '';
+    msg.className = 'msg-ok create-msg';
+    msg.textContent = `Crawl complete${crawlPages ? ' · '+Number(crawlPages).toLocaleString()+' pages' : ''}. Click Vectorize to index.`;
+    const vBtn = document.getElementById('kbs-vectorize-btn');
+    vBtn.dataset.crawlId = crawlId;
+    vBtn.style.display = '';
+    loadKBs();
+  } catch(e) { msg.className = 'msg-err create-msg'; msg.textContent=`Error: ${e.message}`; }
+  finally { btn.disabled = false; }
+});
+
+document.getElementById('kbs-vectorize-btn').addEventListener('click', async () => {
+  const vBtn    = document.getElementById('kbs-vectorize-btn');
+  const msg     = document.getElementById('kbs-create-msg');
+  const crawlId = vBtn.dataset.crawlId;
+  if (!crawlId) return;
+  vBtn.disabled = true;
+  msg.className = 'create-msg';
+  try {
+    msg.textContent = 'Vectorizing…';
+    const idxRes = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/index`, {method: 'POST', body: JSON.stringify({crawl_job_id: crawlId})});
+    const idxJob = await idxRes.json();
+    if (!idxRes.ok) { msg.className = 'msg-err create-msg'; msg.textContent=`Vectorize failed: ${idxJob.detail||JSON.stringify(idxJob)}`; vBtn.disabled=false; return; }
+    const idxFinal = await pollJob(idxJob.job_id, 'index', j => { const p=j.progress; msg.textContent=`Vectorizing… ${p?p.pages_indexed+' / '+p.pages_total+' pages':''}`; loadKBs(); });
     const embedTokens = idxFinal?.progress?.embed_tokens;
     msg.className = 'msg-ok create-msg';
     msg.textContent = `KnowledgeBase ready${embedTokens != null ? ' · '+embedTokens.toLocaleString()+' embed tokens' : ''}.`;
     document.getElementById('kbs-name').value = '';
     document.getElementById('kbs-url').value = '';
+    vBtn.style.display = 'none';
     loadKBs();
-  } catch(e) { msg.className = 'msg-err create-msg'; msg.textContent=`Error: ${e.message}`; }
-  finally { btn.disabled = false; }
+  } catch(e) { msg.className = 'msg-err create-msg'; msg.textContent=`Vectorize failed: ${e.message}`; }
+  finally { vBtn.disabled = false; }
 });
 
 async function pollJob(jobId, type, onProgress) {

@@ -7,18 +7,19 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql://answerer:answerer@postgres:5432/answerer
-      QDRANT_PATH: /data/qdrant
+      QDRANT_URL: ${QDRANT_URL:-http://10.128.0.3:6333}
       SERVICE_KEY: ${SERVICE_KEY:-test-service-key}
       JWT_SECRET: ${JWT_SECRET:-test-jwt-secret}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-project-3a1ab238-6b95-4034-8c6}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us-central1}
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/adc.json
     volumes:
-      - qdrant_data:/data/qdrant
       - ${HOME}/.config/gcloud/application_default_credentials.json:/secrets/adc.json:ro
     depends_on:
       postgres:
         condition: service_healthy
+
+
 
   postgres:
     image: postgres:16-alpine
@@ -36,4 +37,3 @@ services:
 
 volumes:
   postgres_data:
-  qdrant_data:

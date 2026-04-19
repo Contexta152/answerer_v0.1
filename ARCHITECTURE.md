@@ -190,7 +190,7 @@ This is both a cost optimisation and a latency optimisation.
 
 ## Crawl and Index Flow
 
-Crawl and index are async jobs — they run in the background, the caller polls for status.
+Crawl and index are async jobs processed by the `worker` Cloud Run service. The API creates job records; the worker polls and executes them. Crawl and index are **two separate manual steps** — the admin console shows a Vectorize button after crawl completes.
 
 ```
 POST /v1/tenants/{id}/crawl
@@ -198,28 +198,35 @@ POST /v1/tenants/{id}/crawl
         ▼
 1. Create Job record in Postgres (status: pending)
 2. Return Job object immediately (202 Accepted)
-3. Background task starts:
-   a. Crawl target URL (respecting robots.txt, max_pages)
-   b. Store raw pages in Postgres
-   c. Update job progress in Postgres
-   d. On completion: status → completed
         │
-        ▼
+        ▼ (worker picks up job)
+3. Crawl target URL (respecting robots.txt, max_pages)
+4. Store raw pages in Postgres
+5. Update job progress in Postgres
+6. On completion: status → completed
+
+        ↓ User clicks Vectorize in admin console
+
 POST /v1/tenants/{id}/index (crawl_job_id)
         │
         ▼
 1. Validate crawl job is completed
 2. Create Job record in Postgres (status: pending)
 3. Return Job immediately (202 Accepted)
-4. Background task starts:
-   a. Load pages from Postgres for this crawl job
-   b. Chunk text (chunk_size, chunk_overlap from tenant Settings)
-   c. Embed chunks via Vertex AI
-   d. Upsert vectors into Qdrant tenant collection
-      — each vector payload includes: {source, text, crawl_job_id}
-   e. Update job progress
-   f. On completion: status → completed
+        │
+        ▼ (worker picks up job)
+4. Load pages from Postgres for this crawl job
+5. Chunk text (chunk_size, chunk_overlap from tenant Settings)
+6. Embed chunks via Vertex AI
+7. Upsert vectors into Qdrant tenant collection
+   — each vector payload includes: {source, text, crawl_job_id}
+8. Update job progress
+9. On completion: status → completed
 ```
+
+### Worker
+
+The `worker` Cloud Run service polls the `jobs` table every 5 seconds and dispatches jobs. It runs the same Docker image as `answerer` but with `command: python worker_main.py`. A minimal HTTP health server runs alongside the polling loop (required by Cloud Run). The worker has `restart: always` behaviour via Cloud Run's built-in container management.
 
 ### Knowledge Base Delete
 
@@ -406,6 +413,7 @@ answerer_v0.1/
       qdrant.py
       postgres.py
       jobs.py
+    worker_main.py                 # Background job worker (crawl + index dispatch)
     Dockerfile
     requirements.txt
   admin_console/                  # Per-tenant admin UI
@@ -458,11 +466,14 @@ When behaviour is ambiguous, the spec wins — not the code.
 | Cloud SQL instance | `answerer-db` — Postgres 15, `db-g1-small`, zonal |
 | Database | `answerer`, user `answerer`, password in Secret Manager (`answerer-db-password`) |
 | Cloud SQL connection name | `project-3a1ab238-6b95-4034-8c6:us-central1:answerer-db` |
-| Vertex AI | `text-embedding-004` (embeddings), `gemini-1.5-flash` (LLM) |
+| Vertex AI | `text-embedding-004` (embeddings), `gemini-2.0-flash-001` (LLM) |
 | Qdrant | GCE VM `qdrant-server`, `us-central1-a`, `10.128.0.3:6333`, 50 GB persistent SSD |
 | Cloud NAT | `nat-router` — outbound internet for VMs without external IPs |
 | Firewall | `allow-qdrant-internal` — tcp:6333 from `10.128.0.0/20` to tag `qdrant-server` |
 | Cloud Run service | `answerer`, `us-central1`, Cloud SQL via Unix socket, Qdrant via Direct VPC Egress |
+| Cloud Run service | `worker`, `us-central1`, same image as answerer, command: `python worker_main.py`, Cloud SQL via Unix socket, Qdrant via Direct VPC Egress |
+| Cloud Run service | `admin-console`, `us-central1` |
+| Cloud Run service | `vendor-console`, `us-central1` |
 
 ---
 
@@ -483,6 +494,8 @@ When behaviour is ambiguous, the spec wins — not the code.
 | Suspension authority | Admin Console | Detects usage >= quota, calls answerer |
 | Answerer suspension logic | None | Answerer only stores state, enforces it |
 | Contract format | OpenAPI 3.0.3 | Tooling support (Prism, Spectral) |
+| Job execution | Separate `worker` Cloud Run service | Keeps heavy background work (crawl, embed) out of the API request lifecycle; Cloud Run manages restarts |
+| Crawl/index as separate steps | User clicks Vectorize after crawl | Makes both steps visible and independently retryable; crawl is slow and painful to repeat if only vectorize fails |
 | Stub server | Prism | Zero-code, auto-generates from spec |
 
 ---
