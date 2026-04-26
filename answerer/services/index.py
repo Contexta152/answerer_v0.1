@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -103,9 +104,8 @@ async def start_index(tenant_id: UUID, crawl_job_id: UUID) -> Job:
     return await jobs_storage.create_job(tenant_id, "index", url=str(crawl_job_id))
 
 
-_INDEX_PAGE_BATCH    = 10   # pages to chunk+embed+upsert concurrently
-_INDEX_PROGRESS_EVERY = 5   # DB progress write every N pages
-_INDEX_CANCEL_EVERY  = 20   # cancel check every N pages
+_INDEX_PAGE_BATCH    = 50   # pages to accumulate before one embed+upsert round
+_INDEX_CANCEL_EVERY  = 100  # cancel check every N pages
 
 
 async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> None:
@@ -136,60 +136,76 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
                 "pages_failed":     total_pages_failed,
             }
 
-        async def _process_page(page: dict) -> tuple[list, int, int, bool]:
-            """Extract, chunk, embed one page. Returns (vectors, tokens, batches, ok)."""
-            try:
-                text   = _extract_text(page["content"])
-                chunks = _chunk_text(text, settings.chunk_size, settings.chunk_overlap)
+        async def _flush(pages: list[dict]) -> None:
+            """Chunk all pages, embed all chunks in one call, upsert once."""
+            nonlocal total_chunks_created, total_vectors_upserted, total_embed_tokens
+            nonlocal total_embed_batches, total_pages_failed, total_pages_vectorized
+
+            # Extract + chunk every page; track which chunks belong to which page
+            page_chunks: list[tuple[str, list[str]]] = []
+            for page in pages:
+                try:
+                    text = _extract_text(page["content"])
+                    chunks = _chunk_text(text, settings.chunk_size, settings.chunk_overlap)
+                    page_chunks.append((page["url"], chunks))
+                except Exception as exc:
+                    logger.warning("Failed to chunk page %s: %s", page.get("url"), exc)
+                    page_chunks.append((page["url"], []))
+
+            # Pages with no content count as vectorized (nothing to embed)
+            for _, chunks in page_chunks:
                 if not chunks:
-                    return [], 0, 0, True
-                embeddings, batch_tokens, batch_count = await _embed_texts(tenant_id, chunks)
+                    total_pages_vectorized += 1
+
+            # Flatten all chunks for a single embed call
+            flat_urls:   list[str] = []
+            flat_chunks: list[str] = []
+            for url, chunks in page_chunks:
+                for chunk in chunks:
+                    flat_urls.append(url)
+                    flat_chunks.append(chunk)
+
+            if not flat_chunks:
+                return
+
+            try:
+                embeddings, tokens, batches = await _embed_texts(tenant_id, flat_chunks)
+                total_embed_tokens  += tokens
+                total_embed_batches += batches
+
                 vectors = [
                     {
                         "id":      str(uuid.uuid4()),
-                        "vector":  embedding,
+                        "vector":  emb,
                         "payload": {
-                            "source":       page["url"],
+                            "source":       url,
                             "text":         chunk,
                             "crawl_job_id": str(crawl_job_id),
                         },
                     }
-                    for chunk, embedding in zip(chunks, embeddings)
+                    for url, chunk, emb in zip(flat_urls, flat_chunks, embeddings)
                 ]
-                return vectors, batch_tokens, batch_count, True
+                await qdrant.upsert_vectors(tenant_id, vectors)
+                total_vectors_upserted += len(vectors)
+                total_chunks_created   += len(vectors)
+                for _, chunks in page_chunks:
+                    if chunks:
+                        total_pages_vectorized += 1
             except Exception as exc:
-                logger.warning("Failed to process page %s: %s", page.get("url"), exc)
-                return [], 0, 0, False
+                logger.warning("Embed/upsert failed for batch of %d pages: %s", len(pages), exc)
+                total_pages_failed += sum(1 for _, c in page_chunks if c)
 
-        # Collect pages into batches and process each batch concurrently
         batch: list[dict] = []
         async for page in jobs_storage.iter_crawl_pages(crawl_job_id, tenant_id):
             batch.append(page)
             if len(batch) < _INDEX_PAGE_BATCH:
                 continue
 
-            results = await asyncio.gather(*[_process_page(p) for p in batch])
-
-            all_vectors: list[dict] = []
-            for vectors, tokens, batches, ok in results:
-                if ok:
-                    total_pages_vectorized += 1
-                    total_chunks_created   += len(vectors)
-                    total_vectors_upserted += len(vectors)
-                    total_embed_tokens     += tokens
-                    total_embed_batches    += batches
-                    all_vectors.extend(vectors)
-                else:
-                    total_pages_failed += 1
-
-            if all_vectors:
-                await qdrant.upsert_vectors(tenant_id, all_vectors)
-
+            await _flush(batch)
             idx += len(batch)
             batch = []
 
-            if idx % _INDEX_PROGRESS_EVERY == 0:
-                await jobs_storage.update_job_status(job_id, "running", progress=_progress())
+            await jobs_storage.update_job_status(job_id, "running", progress=_progress())
             if idx % _INDEX_CANCEL_EVERY == 0:
                 if await jobs_storage.is_cancel_requested(job_id):
                     logger.info("Vectorize job %s cancelled after %d pages", job_id, idx)
@@ -199,22 +215,8 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
                     )
                     return
 
-        # Process any remaining pages
         if batch:
-            results = await asyncio.gather(*[_process_page(p) for p in batch])
-            all_vectors = []
-            for vectors, tokens, batches, ok in results:
-                if ok:
-                    total_pages_vectorized += 1
-                    total_chunks_created   += len(vectors)
-                    total_vectors_upserted += len(vectors)
-                    total_embed_tokens     += tokens
-                    total_embed_batches    += batches
-                    all_vectors.extend(vectors)
-                else:
-                    total_pages_failed += 1
-            if all_vectors:
-                await qdrant.upsert_vectors(tenant_id, all_vectors)
+            await _flush(batch)
             idx += len(batch)
 
         final = _progress()
