@@ -94,7 +94,7 @@ async def delete_crawl(tenant_id: UUID, job_id: UUID) -> None:
 
 
 async def _fetch_robots(robots_url: str):
-    """Fetch and parse robots.txt in a thread to avoid blocking the event loop."""
+    """Fetch and parse robots.txt; falls back to allow-all on timeout or error."""
     import urllib.robotparser
 
     def _read():
@@ -106,7 +106,10 @@ async def _fetch_robots(robots_url: str):
             pass
         return rp
 
-    return await asyncio.to_thread(_read)
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_read), timeout=5.0)
+    except Exception:
+        return urllib.robotparser.RobotFileParser()  # unread parser allows everything
 
 
 _CRAWL_CONCURRENCY    = 10   # parallel page fetches
@@ -168,44 +171,41 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
                 "pages_skipped_content":pages_skipped_content,
             }
 
-        sem = asyncio.Semaphore(_CRAWL_CONCURRENCY)
-
         async def _fetch_one(client: httpx.AsyncClient, url: str, depth: int):
             """Fetch a single page and return (new_links, stored_body | None)."""
             nonlocal pages_skipped_robots, pages_skipped_scope, pages_skipped_http, pages_skipped_content
-            async with sem:
-                if not _in_scope(url):
-                    pages_skipped_scope += 1
-                    return [], None
-                if not rp.can_fetch(_USER_AGENT, url):
-                    pages_skipped_robots += 1
-                    return [], None
-                try:
-                    resp = await client.get(url)
-                except (httpx.RequestError, httpx.HTTPStatusError) as e:
-                    logger.debug("Crawl %s: request error %s: %s", job_id, url, e)
-                    pages_skipped_http += 1
-                    return [], None
-                if resp.status_code != 200:
-                    pages_skipped_http += 1
-                    return [], None
-                content_type = resp.headers.get("content-type", "")
-                if "text/html" not in content_type and "text/plain" not in content_type:
-                    pages_skipped_content += 1
-                    return [], None
-                body = resp.text
-                if crawl_delay > 0:
-                    await asyncio.sleep(crawl_delay)
-                new_links: list[tuple[str, int]] = []
-                if "text/html" in content_type and depth < max_depth:
-                    extractor = _LinkExtractor()
-                    extractor.feed(body)
-                    for href in extractor.links:
-                        abs_url = _canonical(urljoin(url, href))
-                        p = urlparse(abs_url)
-                        if p.scheme in ("http", "https") and _in_scope(abs_url):
-                            new_links.append((abs_url, depth + 1))
-                return new_links, body
+            if not _in_scope(url):
+                pages_skipped_scope += 1
+                return [], None
+            if not rp.can_fetch(_USER_AGENT, url):
+                pages_skipped_robots += 1
+                return [], None
+            try:
+                resp = await client.get(url)
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                logger.debug("Crawl %s: request error %s: %s", job_id, url, e)
+                pages_skipped_http += 1
+                return [], None
+            if resp.status_code != 200:
+                pages_skipped_http += 1
+                return [], None
+            content_type = resp.headers.get("content-type", "")
+            if "text/html" not in content_type and "text/plain" not in content_type:
+                pages_skipped_content += 1
+                return [], None
+            body = resp.text
+            if crawl_delay > 0:
+                await asyncio.sleep(crawl_delay)
+            new_links: list[tuple[str, int]] = []
+            if "text/html" in content_type and depth < max_depth:
+                extractor = _LinkExtractor()
+                extractor.feed(body)
+                for href in extractor.links:
+                    abs_url = _canonical(urljoin(url, href))
+                    p = urlparse(abs_url)
+                    if p.scheme in ("http", "https") and _in_scope(abs_url):
+                        new_links.append((abs_url, depth + 1))
+            return new_links, body
 
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(30.0),
@@ -243,24 +243,27 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
                             await jobs_store.insert_crawl_page(job_id, tenant_id, url, body)
                             pages_crawled += 1
                             logger.debug("Crawl %s: stored %d/%d: %s", job_id, pages_crawled, max_pages, url)
+                            if pages_crawled % _PROGRESS_EVERY == 0:
+                                await jobs_store.update_job_status(job_id, "running", progress=_progress())
+                            if pages_crawled % _CANCEL_CHECK_EVERY == 0:
+                                if await jobs_store.is_cancel_requested(job_id):
+                                    cancelled = True
+                                    for t in pending:
+                                        t.cancel()
+                                    break
                         except Exception as store_exc:
                             logger.warning("Crawl %s: store failed %s: %s", job_id, url, store_exc)
                             pages_store_failed += 1
 
+                    if cancelled:
+                        break
+
+                    # Gate on pages_crawled only (not + pending) so failed tasks
+                    # don't prematurely close the queue and cause a short crawl.
                     for link_url, link_depth in new_links:
-                        if link_url not in queued and pages_crawled + len(pending) < max_pages:
+                        if link_url not in queued and pages_crawled < max_pages:
                             queued.add(link_url)
                             queue.append((link_url, link_depth))
-
-                # Batch DB writes — progress and cancel check
-                if pages_crawled % _PROGRESS_EVERY == 0 and pages_crawled > 0:
-                    await jobs_store.update_job_status(job_id, "running", progress=_progress())
-                if pages_crawled % _CANCEL_CHECK_EVERY == 0 and pages_crawled > 0:
-                    if await jobs_store.is_cancel_requested(job_id):
-                        cancelled = True
-                        for t in pending:
-                            t.cancel()
-                        break
 
         if cancelled:
             logger.info("Crawl %s stopped by user after %d pages", job_id, pages_crawled)
