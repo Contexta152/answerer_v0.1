@@ -906,7 +906,7 @@ tbody tr.summary-row:hover td { background: var(--surface-hi); }
 
 .health-row-label {
   font-size:      .67rem;
-  font-weight:    700;
+  font-weight:    400;
   text-transform: uppercase;
   letter-spacing: .06em;
   color:          var(--text-dim);
@@ -916,7 +916,7 @@ tbody tr.summary-row:hover td { background: var(--surface-hi); }
 
 .health-row-value {
   font-size:            .78rem;
-  font-weight:          600;
+  font-weight:          400;
   color:                var(--text);
   font-variant-numeric: tabular-nums;
   text-align:           right;
@@ -928,7 +928,7 @@ tbody tr.summary-row:hover td { background: var(--surface-hi); }
 
 .health-row-value.warn   { color: var(--warning); }
 .health-row-value.danger { color: var(--danger);  }
-.health-row-value.muted  { color: var(--text-sub); font-weight: 400; }
+.health-row-value.muted  { color: var(--text-sub); }
 
 .health-card-btn {
   display:       block;
