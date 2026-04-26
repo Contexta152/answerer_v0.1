@@ -1,1 +1,0 @@
-curl -s https://answerer-848760828618.us-central1.run.app/v1/tenants/ed8fe501-86dc-443a-bc53-7e8f48db82c3/crawl/6ccadfce-72bb-4c94-a2bb-3cd851e9378a -H "X-Service-Key: $(gcloud secrets   versions access latest --secret=service-key)" | python3 -m json.tool
