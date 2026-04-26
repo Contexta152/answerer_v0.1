@@ -93,24 +93,6 @@ async def delete_crawl(tenant_id: UUID, job_id: UUID) -> None:
     await pg_store.delete_crawl_job(tenant_id, job_id)
 
 
-async def _fetch_robots(robots_url: str):
-    """Fetch and parse robots.txt; falls back to allow-all on timeout or error."""
-    import urllib.robotparser
-
-    def _read():
-        rp = urllib.robotparser.RobotFileParser()
-        rp.set_url(robots_url)
-        try:
-            rp.read()
-        except Exception:
-            pass
-        return rp
-
-    try:
-        return await asyncio.wait_for(asyncio.to_thread(_read), timeout=5.0)
-    except Exception:
-        return urllib.robotparser.RobotFileParser()  # unread parser allows everything
-
 
 _CRAWL_CONCURRENCY    = 10   # parallel page fetches
 _PROGRESS_EVERY       = 5    # write progress to DB every N pages stored
@@ -126,7 +108,6 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
 
     pages_crawled        = 0
     pages_store_failed   = 0
-    pages_skipped_robots = 0
     pages_skipped_scope  = 0
     pages_skipped_http   = 0
     pages_skipped_content = 0
@@ -153,7 +134,6 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
             return True
 
         seed_canonical = _canonical(seed_url)
-        rp = await _fetch_robots(f"{base_scheme}://{base_netloc}/robots.txt")
 
         visited: set[str] = set()
         queued:  set[str] = {seed_canonical}
@@ -165,7 +145,6 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
                 "pages_total":          None,
                 "queue_size":           min(len(queue), max(0, max_pages - pages_crawled)),
                 "pages_store_failed":   pages_store_failed,
-                "pages_skipped_robots": pages_skipped_robots,
                 "pages_skipped_scope":  pages_skipped_scope,
                 "pages_skipped_http":   pages_skipped_http,
                 "pages_skipped_content":pages_skipped_content,
@@ -176,9 +155,6 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
             nonlocal pages_skipped_robots, pages_skipped_scope, pages_skipped_http, pages_skipped_content
             if not _in_scope(url):
                 pages_skipped_scope += 1
-                return [], None
-            if not rp.can_fetch(_USER_AGENT, url):
-                pages_skipped_robots += 1
                 return [], None
             try:
                 resp = await client.get(url)
@@ -275,10 +251,10 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
 
         stop_reason = "max_pages reached" if pages_crawled >= max_pages else "queue exhausted"
         logger.info(
-            "Crawl %s completed: %s. crawled=%d store_failed=%d skipped_robots=%d "
+            "Crawl %s completed: %s. crawled=%d store_failed=%d "
             "skipped_scope=%d skipped_http=%d skipped_content=%d",
             job_id, stop_reason, pages_crawled, pages_store_failed,
-            pages_skipped_robots, pages_skipped_scope, pages_skipped_http, pages_skipped_content,
+            pages_skipped_scope, pages_skipped_http, pages_skipped_content,
         )
         final_progress = _progress()
         final_progress["pages_total"]  = pages_crawled
