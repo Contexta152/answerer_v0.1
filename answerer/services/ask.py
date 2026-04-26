@@ -17,10 +17,11 @@ from models import Chunk, QuestionLogEntry, Settings, Timing
 
 _LLM_MODEL = os.environ.get("VERTEX_LLM_MODEL", "gemini-2.0-flash-001")
 _SYSTEM_PROMPT = (
-    "You are a helpful assistant. Answer the user's question using only the "
-    "context provided below. If the context does not contain enough information, "
-    "say so briefly. Do not fabricate information.\n\n"
-    "Context:\n{context}"
+    "You are a helpful assistant.\n"
+    "Answer the question using ONLY the information provided in the sources below.\n"
+    "If the sources don't contain enough information to answer confidently, say so clearly.\n"
+    "Cite sources by number.\n\n"
+    "Sources:\n{context}"
 )
 
 
@@ -28,13 +29,15 @@ def _now_ms() -> int:
     return int(time.monotonic() * 1000)
 
 
-def _build_prompt(question: str, chunks: list[Chunk]) -> str:
-    context = (
-        "\n\n".join(f"[Source: {c.source}]\n{c.text}" for c in chunks)
-        if chunks
-        else "No relevant context found."
-    )
-    return f"{_SYSTEM_PROMPT.format(context=context)}\n\nQuestion: {question}"
+def _build_prompt(question: str, chunks: list[Chunk], system_prompt: str | None = None) -> str:
+    if chunks:
+        context = "\n\n".join(
+            f"[Source {i+1}: {c.source}]\n{c.text}" for i, c in enumerate(chunks)
+        )
+    else:
+        context = "No relevant context found."
+    template = system_prompt if system_prompt and "{context}" in system_prompt else _SYSTEM_PROMPT
+    return f"{template.format(context=context)}\n\nQuestion: {question}\n\nAnswer:"
 
 
 def _make_log_entry(
@@ -98,14 +101,14 @@ async def _validate_request(tenant_id: UUID, question: str) -> Settings:
     return settings
 
 
-async def _generate(question: str, chunks: list[Chunk]) -> tuple[str, int | None, int | None]:
+async def _generate(question: str, chunks: list[Chunk], system_prompt: str | None = None) -> tuple[str, int | None, int | None]:
     """Call Vertex AI Gemini (non-streaming). Returns (answer, prompt_tokens, answer_tokens)."""
     import vertexai
     from vertexai.generative_models import GenerativeModel
 
     project = os.environ["GOOGLE_CLOUD_PROJECT"]
     location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
-    prompt = _build_prompt(question, chunks)
+    prompt = _build_prompt(question, chunks, system_prompt)
 
     def _call() -> Any:
         vertexai.init(project=project, location=location)
@@ -127,14 +130,14 @@ async def _generate(question: str, chunks: list[Chunk]) -> tuple[str, int | None
     return answer, prompt_tokens, answer_tokens
 
 
-async def _generate_stream(question: str, chunks: list[Chunk]) -> AsyncIterator[str]:
+async def _generate_stream(question: str, chunks: list[Chunk], system_prompt: str | None = None) -> AsyncIterator[str]:
     """Stream Vertex AI Gemini response. Yields text deltas."""
     import vertexai
     from vertexai.generative_models import GenerativeModel
 
     project = os.environ["GOOGLE_CLOUD_PROJECT"]
     location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
-    prompt = _build_prompt(question, chunks)
+    prompt = _build_prompt(question, chunks, system_prompt)
 
     q: asyncio.Queue[str | None | BaseException] = asyncio.Queue()
     loop = asyncio.get_running_loop()
@@ -262,7 +265,7 @@ async def ask(tenant_id: UUID, question: str) -> dict:
     # 6. LLM generate
     llm_start = _now_ms()
     try:
-        answer, prompt_tokens, answer_tokens = await _generate(question, chunks)
+        answer, prompt_tokens, answer_tokens = await _generate(question, chunks, settings.system_prompt)
     except Exception as exc:
         total_ms = _now_ms() - start_ms
         _log_async(
@@ -424,7 +427,7 @@ async def ask_stream(tenant_id: UUID, question: str) -> AsyncIterator[str]:
     llm_start = _now_ms()
     full_answer = ""
     try:
-        async for text in _generate_stream(question, chunks):
+        async for text in _generate_stream(question, chunks, settings.system_prompt):
             full_answer += text
             yield _sse_event("delta", {"text": text})
     except Exception as exc:

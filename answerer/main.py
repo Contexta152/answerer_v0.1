@@ -3,7 +3,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import analytics, ask, crawl, curated, demo_questions, guardrails, index, qlog, search, tenants
+from routers import (
+    analytics, ask, costs, crawl, curated, demo_questions,
+    gaplist, guardrails, index, insights, prompt, qlog, recommendations,
+    search, system_health, tenants,
+)
 from storage.postgres import create_tables
 
 
@@ -30,5 +34,11 @@ app.include_router(guardrails.router)
 app.include_router(curated.router)
 app.include_router(qlog.router)
 app.include_router(analytics.router)
+app.include_router(insights.router)
+app.include_router(costs.router)
+app.include_router(recommendations.router)
+app.include_router(gaplist.router)
+app.include_router(prompt.router)
 app.include_router(ask.router)
 app.include_router(search.router)
+app.include_router(system_health.router)

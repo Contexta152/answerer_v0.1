@@ -4,7 +4,7 @@ import os
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -18,6 +18,7 @@ router = APIRouter()
 class _CrawlRequest(BaseModel):
     url: str
     max_pages: int = 500
+    max_depth: int = 3
     name: Optional[str] = None
     crawl_delay: float = 0.0
 
@@ -87,11 +88,11 @@ async def list_crawls(
 async def start_crawl(
     tenant_id: UUID,
     body: _CrawlRequest,
-    background_tasks: BackgroundTasks,
     _: None = Depends(_require_service_or_admin),
 ) -> Job:
     return await crawl_service.start_crawl(
-        tenant_id, body.url, body.max_pages, background_tasks, name=body.name, crawl_delay=body.crawl_delay
+        tenant_id, body.url, body.max_pages,
+        name=body.name, crawl_delay=body.crawl_delay, max_depth=body.max_depth,
     )
 
 
@@ -102,6 +103,26 @@ async def get_crawl_status(
     _: None = Depends(_require_service_or_admin),
 ) -> Job:
     return await crawl_service.get_crawl_status(tenant_id, job_id)
+
+
+@router.post("/v1/tenants/{tenant_id}/crawl/{job_id}/stop", status_code=204)
+async def stop_crawl(
+    tenant_id: UUID,
+    job_id: UUID,
+    _: None = Depends(_require_service_or_admin),
+) -> None:
+    await crawl_service.stop_crawl(tenant_id, job_id)
+
+
+@router.get("/v1/tenants/{tenant_id}/crawl/{job_id}/pages")
+async def list_crawl_pages(
+    tenant_id: UUID,
+    job_id: UUID,
+    _: None = Depends(_require_service_or_admin),
+):
+    from storage.jobs import get_crawl_page_urls
+    rows = await get_crawl_page_urls(job_id, tenant_id)
+    return {"items": [{"url": r["url"], "crawled_at": r["crawled_at"].isoformat() if r["crawled_at"] else None} for r in rows]}
 
 
 @router.delete("/v1/tenants/{tenant_id}/crawl/{job_id}", status_code=204)

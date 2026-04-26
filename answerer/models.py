@@ -40,6 +40,7 @@ class Settings(BaseModel):
     max_question_chars: int = 1500
     chunk_size: int = 200
     chunk_overlap: int = 60
+    system_prompt: Optional[str] = None
 
 
 class Guardrail(BaseModel):
@@ -96,6 +97,7 @@ class QuestionLogEntry(BaseModel):
 class JobProgress(BaseModel):
     pages_crawled: Optional[int] = None
     pages_indexed: Optional[int] = None
+    pages_vectorized: Optional[int] = None
     pages_total: Optional[int] = None
     chunks_created: Optional[int] = None
     vectors_upserted: Optional[int] = None

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grounded Answers — GCP Architecture</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8f9fc;
+      padding: 48px 32px;
+      color: #1a1a2e;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #1a1a2e;
+    }
+
+    header p {
+      margin-top: 8px;
+      font-size: 15px;
+      color: #666;
+    }
+
+    .diagram-wrap {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 2px 24px rgba(0,0,0,0.08);
+      padding: 40px;
+      max-width: 1400px;
+      margin: 0 auto 48px auto;
+      overflow-x: auto;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+      max-width: 1400px;
+      margin: 0 auto 48px auto;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #444;
+      background: white;
+      border-radius: 8px;
+      padding: 8px 16px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+
+    .callouts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .callout {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.07);
+      border-left: 4px solid #4285f4;
+    }
+
+    .callout h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 8px;
+    }
+
+    .callout p {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.6;
+    }
+
+    .callout.green  { border-color: #34a853; }
+    .callout.yellow { border-color: #fbbc04; }
+    .callout.purple { border-color: #9334e6; }
+    .callout.red    { border-color: #ea4335; }
+    .callout.blue   { border-color: #4285f4; }
+
+    .mermaid svg {
+      display: block;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Grounded Answers — GCP Deployment Architecture</h1>
+    <p>Multi-tenant RAG SaaS · us-central1 · Serverless auto-scale</p>
+  </header>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#e8f0fe;border:2px solid #4285f4"></div>External / Internet</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#e6f4ea;border:2px solid #34a853"></div>Cloud Run (auto-scaling)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fce8b2;border:2px solid #fbbc04"></div>Stateful Storage (Private VPC)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f3e8ff;border:2px solid #9334e6"></div>Vertex AI (Managed)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fce8e6;border:2px solid #ea4335"></div>GCP Platform Services</div>
+  </div>
+
+  <div class="diagram-wrap">
+    <div class="mermaid">
+%%{init: {"theme": "base", "themeVariables": {
+  "primaryColor": "#e6f4ea",
+  "primaryBorderColor": "#34a853",
+  "primaryTextColor": "#1a1a2e",
+  "lineColor": "#aaa",
+  "secondaryColor": "#e8f0fe",
+  "tertiaryColor": "#fce8b2",
+  "fontFamily": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif",
+  "fontSize": "14px"
+}}}%%
+
+graph TB
+
+  %% ── INTERNET ─────────────────────────────────────────────────────────────
+  subgraph INTERNET["  Internet  "]
+    direction LR
+    USER["👤 End Users\nEmbedded JS Widget\n(any website)"]
+    ADMIN_BR["🏢 Tenant Admins\nAdmin dashboard\n(per client)"]
+    VENDOR_BR["⚡ Platform Owner\nVendor console\n(superadmin)"]
+    PAYMENT_PROV["💳 Payment Provider\nLemonSqueezy\n(webhooks)"]
+  end
+
+  %% ── GCP ──────────────────────────────────────────────────────────────────
+  subgraph GCP["  Google Cloud Platform — us-central1  "]
+    direction TB
+
+    %% ── PUBLIC EDGE ────────────────────────────────────────────────────────
+    subgraph EDGE["  Public Edge  "]
+      WG["Widget Gateway\n☁ Cloud Run\nPublic endpoint · Rate limiting\nWidget key auth"]
+    end
+
+    %% ── CONSOLES ───────────────────────────────────────────────────────────
+    subgraph CONSOLES["  Management Consoles — Cloud Run  "]
+      direction LR
+      AC["Admin Console\n☁ Cloud Run\nPer-tenant UI\nKnowledge bases · Guardrails\nAnalytics · Q-log · Settings"]
+      VC["Vendor Console\n☁ Cloud Run\nSuperadmin UI\nTenant provisioning\nQuota management"]
+    end
+
+    %% ── CORE ───────────────────────────────────────────────────────────────
+    subgraph CORE["  Core Services — Cloud Run (auto-scales to demand)  "]
+      direction LR
+      ANS["Answerer API\n☁ Cloud Run\nFastAPI · Async · Multi-tenant\n10 tenants / instance\nAuto-scales horizontally"]
+      WRK["Worker\n☁ Cloud Run\nBackground job processor\nWeb crawl · Chunk · Vectorize\nPolls job queue every 5s"]
+    end
+
+    %% ── STORAGE ────────────────────────────────────────────────────────────
+    subgraph DATA["  Stateful Storage — Private VPC  "]
+      direction LR
+      SQL["Cloud SQL\nPostgres 15\nTenants · Jobs · Q-logs\nCurated Q&A · Guardrails\ntenant_id row isolation"]
+      QDRANT["Qdrant Vector DB\nGCE VM · 50 GB SSD\n1 collection per tenant\nStructural isolation\nShared across all instances"]
+    end
+
+    %% ── VERTEX AI ──────────────────────────────────────────────────────────
+    subgraph VERTEX["  Vertex AI — GCP Managed  "]
+      direction LR
+      EMBED["text-embedding-004\nChunk & query embedding\nCost-labelled per tenant"]
+      LLM["gemini-2.0-flash-001\nAnswer generation\nRAG context injection"]
+    end
+
+    %% ── PLATFORM ───────────────────────────────────────────────────────────
+    subgraph PLATFORM["  GCP Platform Services  "]
+      direction LR
+      REG["Artifact Registry\nContainer images"]
+      BUILD["Cloud Build\nCI/CD pipeline\ngcloud builds submit"]
+      SECRETS["Secret Manager\nDB creds · JWT secrets\nAPI keys"]
+    end
+
+  end
+
+  %% ── EDGES — User traffic ────────────────────────────────────────────────
+  USER        -->|"HTTPS · X-Widget-Key"| WG
+  ADMIN_BR    -->|"HTTPS · Bearer JWT"| AC
+  VENDOR_BR   -->|"HTTPS · Bearer JWT"| VC
+  PAYMENT_PROV -->|"Webhook · Service Key"| VC
+
+  %% ── EDGES — Console → API ───────────────────────────────────────────────
+  WG          --> ANS
+  AC          -->|"Admin JWT"| ANS
+  VC          -->|"Service Key"| ANS
+
+  %% ── EDGES — API → Storage ───────────────────────────────────────────────
+  ANS         -->|"Unix socket\n(Cloud SQL Proxy)"| SQL
+  ANS         -->|"Direct VPC Egress\n:6333"| QDRANT
+  WRK         -->|"Unix socket"| SQL
+  WRK         -->|"Direct VPC Egress"| QDRANT
+
+  %% ── EDGES — AI calls ────────────────────────────────────────────────────
+  ANS         -->|"embed query"| EMBED
+  ANS         -->|"generate answer"| LLM
+  WRK         -->|"embed chunks"| EMBED
+
+  %% ── EDGES — Platform ────────────────────────────────────────────────────
+  BUILD       --> REG
+  REG         -->|"deploy"| ANS
+  REG         -->|"deploy"| WRK
+  REG         -->|"deploy"| AC
+  REG         -->|"deploy"| VC
+  REG         -->|"deploy"| WG
+  SECRETS     --> ANS
+  SECRETS     --> WRK
+
+  %% ── STYLES ──────────────────────────────────────────────────────────────
+  classDef internet  fill:#e8f0fe,stroke:#4285f4,color:#1a1a2e,rx:8
+  classDef cloudrun  fill:#e6f4ea,stroke:#34a853,color:#1a1a2e,rx:8
+  classDef storage   fill:#fce8b2,stroke:#fbbc04,color:#1a1a2e,rx:8
+  classDef vertex    fill:#f3e8ff,stroke:#9334e6,color:#1a1a2e,rx:8
+  classDef platform  fill:#fce8e6,stroke:#ea4335,color:#1a1a2e,rx:8
+
+  class USER,ADMIN_BR,VENDOR_BR,PAYMENT_PROV internet
+  class WG,AC,VC,ANS,WRK cloudrun
+  class SQL,QDRANT storage
+  class EMBED,LLM vertex
+  class REG,BUILD,SECRETS platform
+    </div>
+  </div>
+
+  <div class="callouts">
+    <div class="callout green">
+      <h3>Serverless Auto-scaling</h3>
+      <p>All five services run on Cloud Run. The Answerer API scales horizontally under load — new instances spin up in seconds. Each instance serves up to 10 tenants concurrently. No infrastructure to manage.</p>
+    </div>
+    <div class="callout yellow">
+      <h3>Multi-tenant Data Isolation</h3>
+      <p>Qdrant gives every tenant a dedicated vector collection — structural isolation with zero cross-tenant query risk. Postgres uses shared tables with enforced <code>tenant_id</code> scoping at the service layer. One platform, many customers.</p>
+    </div>
+    <div class="callout purple">
+      <h3>GCP-Native AI Pipeline</h3>
+      <p>Vertex AI handles both embedding (text-embedding-004) and generation (Gemini 2.0 Flash). All calls are cost-attributed per tenant via GCP labels, enabling precise unit economics per customer.</p>
+    </div>
+    <div class="callout blue">
+      <h3>Async Background Processing</h3>
+      <p>Web crawl and vectorization run in a dedicated Worker service — keeping the API request path fast and clean. Heavy jobs (crawl, chunk, embed) are dispatched asynchronously from a Postgres job queue.</p>
+    </div>
+    <div class="callout red">
+      <h3>Secure by Default</h3>
+      <p>Storage lives on a private VPC — no public IPs on Qdrant or Cloud SQL. Cloud Run reaches both via Direct VPC Egress and Cloud SQL Proxy. All secrets in Secret Manager. Three distinct auth contexts (service key, admin JWT, widget key).</p>
+    </div>
+    <div class="callout blue">
+      <h3>One-Command Deploy</h3>
+      <p>Each service deploys independently via Cloud Build: build, push to Artifact Registry, and roll out to Cloud Run in a single command. Zero-downtime rollouts; instant rollback to any prior image.</p>
+    </div>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+      themeVariables: {
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontSize: '14px'
+      }
+    });
+  </script>
+
+</body>
+</html>

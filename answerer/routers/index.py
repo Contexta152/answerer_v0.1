@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
@@ -43,7 +43,6 @@ async def _require_service_or_admin(
 async def start_index(
     tenant_id: UUID,
     body: _StartIndexBody,
-    background_tasks: BackgroundTasks,
     _: None = Depends(_require_service_or_admin),
 ) -> Job:
     try:
@@ -69,11 +68,22 @@ async def start_index(
                 "message": "An index job is already running for this tenant",
             },
         )
-
-    background_tasks.add_task(
-        index_service.run_index_job, tenant_id, job.job_id, body.crawl_job_id
-    )
     return job
+
+
+@router.post("/v1/tenants/{tenant_id}/index/{job_id}/stop", status_code=204)
+async def stop_index(
+    tenant_id: UUID,
+    job_id: UUID,
+    _: None = Depends(_require_service_or_admin),
+) -> None:
+    try:
+        await index_service.stop_index(tenant_id, job_id)
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "index_job_not_found", "message": "Job not found"},
+        )
 
 
 @router.get(

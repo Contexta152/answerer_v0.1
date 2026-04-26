@@ -18,6 +18,7 @@ def _row_to_job(row) -> Job:
         progress = JobProgress(
             pages_crawled=p.get("pages_crawled"),
             pages_indexed=p.get("pages_indexed"),
+            pages_vectorized=p.get("pages_vectorized"),
             pages_total=p.get("pages_total"),
             chunks_created=p.get("chunks_created"),
             vectors_upserted=p.get("vectors_upserted"),
@@ -45,16 +46,17 @@ def _row_to_job(row) -> Job:
     )
 
 
-async def create_job(tenant_id: UUID, job_type: str, url: str | None = None, name: str | None = None) -> Job:
+async def create_job(tenant_id: UUID, job_type: str, url: str | None = None, name: str | None = None, params: dict | None = None) -> Job:
     """Insert a new job record with status 'pending' and return it."""
     pool = await get_pool()
     job_id = uuid4()
     now = datetime.now(timezone.utc)
+    params_json = json.dumps(params) if params is not None else None
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO jobs (job_id, tenant_id, job_type, status, created, url, name)
-            VALUES ($1, $2, $3, 'pending', $4, $5, $6)
+            INSERT INTO jobs (job_id, tenant_id, job_type, status, created, url, name, params)
+            VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)
             RETURNING job_id, status, created, started, completed, error, progress, url, name
             """,
             job_id,
@@ -63,6 +65,7 @@ async def create_job(tenant_id: UUID, job_type: str, url: str | None = None, nam
             now,
             url,
             name,
+            params_json,
         )
     return _row_to_job(row)
 
@@ -95,6 +98,10 @@ async def update_job_status(job_id: UUID, status: str, **fields) -> None:
     set_parts = ["status = $2"]
     values: list = [job_id, status]
     idx = 3
+
+    # Reset cancel_requested when a job reaches a terminal state
+    if status in ("completed", "failed"):
+        set_parts.append("cancel_requested = FALSE")
 
     for key, value in fields.items():
         if key not in _MUTABLE_FIELDS:
@@ -153,6 +160,18 @@ async def insert_crawl_page(job_id: UUID, tenant_id: UUID, url: str, content: st
         )
 
 
+async def get_crawl_page_urls(job_id: UUID, tenant_id: UUID) -> list[dict]:
+    """Return URLs and crawl times for a job — no content (can be large)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT url, crawled_at FROM crawl_pages WHERE job_id = $1 AND tenant_id = $2 ORDER BY crawled_at",
+            job_id,
+            tenant_id,
+        )
+    return [dict(row) for row in rows]
+
+
 async def get_crawl_pages(job_id: UUID, tenant_id: UUID) -> list[dict]:
     """Return all pages stored for a crawl job, ordered by crawl time."""
     pool = await get_pool()
@@ -168,3 +187,76 @@ async def get_crawl_pages(job_id: UUID, tenant_id: UUID) -> list[dict]:
             tenant_id,
         )
     return [dict(row) for row in rows]
+
+
+async def claim_pending_job(job_type: str) -> Optional[dict]:
+    """Atomically claim the oldest pending job of the given type. Returns a dict or None."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT job_id, tenant_id, job_type, url, name, params
+                FROM jobs
+                WHERE status = 'pending' AND job_type = $1
+                ORDER BY created
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+                """,
+                job_type,
+            )
+            if row is None:
+                return None
+            await conn.execute(
+                "UPDATE jobs SET status = 'running', started = $2 WHERE job_id = $1",
+                row["job_id"],
+                datetime.now(timezone.utc),
+            )
+            return dict(row)
+
+
+async def request_cancel(job_id: UUID) -> None:
+    """Set the cancel_requested flag in DB."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE jobs SET cancel_requested = TRUE WHERE job_id = $1",
+            job_id,
+        )
+
+
+async def is_cancel_requested(job_id: UUID) -> bool:
+    """Poll the cancel_requested flag from DB."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT cancel_requested FROM jobs WHERE job_id = $1",
+            job_id,
+        )
+    return bool(val)
+
+
+async def iter_crawl_pages(job_id: UUID, tenant_id: UUID, batch_size: int = 50):
+    """Yield pages for a crawl job in batches, avoiding loading all into memory at once."""
+    pool = await get_pool()
+    offset = 0
+    while True:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT url, content, crawled_at
+                FROM crawl_pages
+                WHERE job_id = $1 AND tenant_id = $2
+                ORDER BY crawled_at
+                LIMIT $3 OFFSET $4
+                """,
+                job_id,
+                tenant_id,
+                batch_size,
+                offset,
+            )
+        if not rows:
+            break
+        for row in rows:
+            yield dict(row)
+        offset += batch_size

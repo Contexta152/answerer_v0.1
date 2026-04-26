@@ -1,0 +1,90 @@
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/project-3a1ab238-6b95-4034-8c6/answerer/answerer
+
+steps:
+  # Pull the last image so its layers are available as a build cache
+  - id: pull-cache
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args: ['-c', 'docker pull ${_IMAGE}:latest || true']
+
+  # Build — reuses cached layers (requirements.txt unchanged = pip install skipped)
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --cache-from=${_IMAGE}:latest
+      - -t=${_IMAGE}:latest
+      - .
+    waitFor: [pull-cache]
+
+  # Push new image
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_IMAGE}:latest
+    waitFor: [build]
+
+  # Deploy worker and answerer in parallel once image is pushed
+  - id: deploy-worker
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - worker
+      - --image=${_IMAGE}:latest
+      - --region=us-central1
+      - --no-traffic
+      - --command=python
+      - --args=worker_main.py
+      - --add-cloudsql-instances=project-3a1ab238-6b95-4034-8c6:us-central1:answerer-db
+      - --set-secrets=DATABASE_URL=answerer-db-url:latest,SERVICE_KEY=service-key:latest,JWT_SECRET=jwt-secret:latest
+      - --set-env-vars=QDRANT_URL=http://10.128.0.3:6333,GOOGLE_CLOUD_PROJECT=project-3a1ab238-6b95-4034-8c6,GOOGLE_CLOUD_LOCATION=us-central1
+      - --network=default
+      - --subnet=default
+      - --vpc-egress=private-ranges-only
+    waitFor: [push]
+
+  - id: deploy-answerer
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - answerer
+      - --image=${_IMAGE}:latest
+      - --region=us-central1
+      - --no-traffic
+    waitFor: [push]
+
+  # Shift traffic to latest revision for each service
+  - id: traffic-worker
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - worker
+      - --to-latest
+      - --region=us-central1
+    waitFor: [deploy-worker]
+
+  - id: traffic-answerer
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - answerer
+      - --to-latest
+      - --region=us-central1
+    waitFor: [deploy-answerer]
+
+images:
+  - ${_IMAGE}:latest
+
+timeout: 1200s

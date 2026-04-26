@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import time
 import uuid
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -19,8 +18,8 @@ from storage import qdrant
 
 logger = logging.getLogger(__name__)
 
-_EMBEDDING_MODEL = "text-embedding-004"
-_EMBED_BATCH_SIZE = 20  # Keep total tokens per request well under the 20k limit
+_EMBEDDING_MODEL  = "text-embedding-004"
+_EMBED_BATCH_SIZE = 250  # text-embedding-004 accepts up to 250 texts per call
 
 _embed_model: "TextEmbeddingModel | None" = None
 _embed_model_lock = asyncio.Lock()
@@ -104,6 +103,11 @@ async def start_index(tenant_id: UUID, crawl_job_id: UUID) -> Job:
     return await jobs_storage.create_job(tenant_id, "index", url=str(crawl_job_id))
 
 
+_INDEX_PAGE_BATCH    = 10   # pages to chunk+embed+upsert concurrently
+_INDEX_PROGRESS_EVERY = 5   # DB progress write every N pages
+_INDEX_CANCEL_EVERY  = 20   # cancel check every N pages
+
+
 async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> None:
     """Worker task: chunk, embed, and upsert all pages from a crawl job."""
     try:
@@ -112,117 +116,112 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
 
         pages_total = await postgres.count_crawl_pages(crawl_job_id, tenant_id)
 
-        total_chunks_created = 0
+        total_chunks_created   = 0
         total_vectors_upserted = 0
-        total_embed_tokens = 0
-        total_embed_batches = 0
-        total_pages_failed = 0
+        total_embed_tokens     = 0
+        total_embed_batches    = 0
+        total_pages_failed     = 0
         total_pages_vectorized = 0
         idx = 0
 
-        async for page in jobs_storage.iter_crawl_pages(crawl_job_id, tenant_id):
-            idx += 1
-            if await jobs_storage.is_cancel_requested(job_id):
-                logger.info("Vectorize job %s cancelled after %d pages", job_id, idx - 1)
-                await jobs_storage.update_job_status(
-                    job_id, "failed",
-                    error="Stopped by user",
-                    completed=datetime.now(timezone.utc),
-                )
-                return
+        def _progress() -> dict:
+            return {
+                "pages_indexed":    idx,
+                "pages_vectorized": total_pages_vectorized,
+                "pages_total":      pages_total,
+                "chunks_created":   total_chunks_created,
+                "vectors_upserted": total_vectors_upserted,
+                "embed_tokens":     total_embed_tokens,
+                "embed_batches":    total_embed_batches,
+                "pages_failed":     total_pages_failed,
+            }
 
+        async def _process_page(page: dict) -> tuple[list, int, int, bool]:
+            """Extract, chunk, embed one page. Returns (vectors, tokens, batches, ok)."""
             try:
-                text = _extract_text(page["content"])
+                text   = _extract_text(page["content"])
                 chunks = _chunk_text(text, settings.chunk_size, settings.chunk_overlap)
-            except Exception as page_exc:
-                logger.warning("Failed to extract/chunk page %s: %s", page.get("url"), page_exc)
-                total_pages_failed += 1
-                await jobs_storage.update_job_status(
-                    job_id, "running",
-                    progress={
-                        "pages_indexed": idx,
-                        "pages_vectorized": total_pages_vectorized,
-                        "pages_total": pages_total,
-                        "chunks_created": total_chunks_created,
-                        "vectors_upserted": total_vectors_upserted,
-                        "embed_tokens": total_embed_tokens,
-                        "embed_batches": total_embed_batches,
-                        "pages_failed": total_pages_failed,
-                    },
-                )
-                continue
-
-            if not chunks:
-                await jobs_storage.update_job_status(
-                    job_id, "running",
-                    progress={
-                        "pages_indexed": idx,
-                        "pages_vectorized": total_pages_vectorized,
-                        "pages_total": pages_total,
-                        "chunks_created": total_chunks_created,
-                        "vectors_upserted": total_vectors_upserted,
-                        "embed_tokens": total_embed_tokens,
-                        "embed_batches": total_embed_batches,
-                        "pages_failed": total_pages_failed,
-                    },
-                )
-                continue
-
-            try:
+                if not chunks:
+                    return [], 0, 0, True
                 embeddings, batch_tokens, batch_count = await _embed_texts(tenant_id, chunks)
-
                 vectors = [
                     {
-                        "id": str(uuid.uuid4()),
-                        "vector": embedding,
+                        "id":      str(uuid.uuid4()),
+                        "vector":  embedding,
                         "payload": {
-                            "source": page["url"],
-                            "text": chunk,
+                            "source":       page["url"],
+                            "text":         chunk,
                             "crawl_job_id": str(crawl_job_id),
                         },
                     }
                     for chunk, embedding in zip(chunks, embeddings)
                 ]
-                await qdrant.upsert_vectors(tenant_id, vectors)
+                return vectors, batch_tokens, batch_count, True
+            except Exception as exc:
+                logger.warning("Failed to process page %s: %s", page.get("url"), exc)
+                return [], 0, 0, False
 
-                total_chunks_created += len(chunks)
-                total_vectors_upserted += len(vectors)
-                total_embed_tokens += batch_tokens
-                total_embed_batches += batch_count
-                total_pages_vectorized += 1
-            except Exception as page_exc:
-                logger.warning("Failed to embed/upsert page %s: %s", page.get("url"), page_exc)
-                total_pages_failed += 1
+        # Collect pages into batches and process each batch concurrently
+        batch: list[dict] = []
+        async for page in jobs_storage.iter_crawl_pages(crawl_job_id, tenant_id):
+            batch.append(page)
+            if len(batch) < _INDEX_PAGE_BATCH:
+                continue
 
-            await jobs_storage.update_job_status(
-                job_id,
-                "running",
-                progress={
-                    "pages_indexed": idx,
-                    "pages_vectorized": total_pages_vectorized,
-                    "pages_total": pages_total,
-                    "chunks_created": total_chunks_created,
-                    "vectors_upserted": total_vectors_upserted,
-                    "embed_tokens": total_embed_tokens,
-                    "embed_batches": total_embed_batches,
-                    "pages_failed": total_pages_failed,
-                },
-            )
+            results = await asyncio.gather(*[_process_page(p) for p in batch])
 
+            all_vectors: list[dict] = []
+            for vectors, tokens, batches, ok in results:
+                if ok:
+                    total_pages_vectorized += 1
+                    total_chunks_created   += len(vectors)
+                    total_vectors_upserted += len(vectors)
+                    total_embed_tokens     += tokens
+                    total_embed_batches    += batches
+                    all_vectors.extend(vectors)
+                else:
+                    total_pages_failed += 1
+
+            if all_vectors:
+                await qdrant.upsert_vectors(tenant_id, all_vectors)
+
+            idx += len(batch)
+            batch = []
+
+            if idx % _INDEX_PROGRESS_EVERY == 0:
+                await jobs_storage.update_job_status(job_id, "running", progress=_progress())
+            if idx % _INDEX_CANCEL_EVERY == 0:
+                if await jobs_storage.is_cancel_requested(job_id):
+                    logger.info("Vectorize job %s cancelled after %d pages", job_id, idx)
+                    await jobs_storage.update_job_status(
+                        job_id, "failed", error="Stopped by user",
+                        completed=datetime.now(timezone.utc),
+                    )
+                    return
+
+        # Process any remaining pages
+        if batch:
+            results = await asyncio.gather(*[_process_page(p) for p in batch])
+            all_vectors = []
+            for vectors, tokens, batches, ok in results:
+                if ok:
+                    total_pages_vectorized += 1
+                    total_chunks_created   += len(vectors)
+                    total_vectors_upserted += len(vectors)
+                    total_embed_tokens     += tokens
+                    total_embed_batches    += batches
+                    all_vectors.extend(vectors)
+                else:
+                    total_pages_failed += 1
+            if all_vectors:
+                await qdrant.upsert_vectors(tenant_id, all_vectors)
+            idx += len(batch)
+
+        final = _progress()
+        final["pages_indexed"] = pages_total
+        final["pages_total"]   = pages_total
         await jobs_storage.update_job_status(
-            job_id,
-            "completed",
-            completed=datetime.now(timezone.utc),
-            progress={
-                "pages_indexed": pages_total,
-                "pages_vectorized": total_pages_vectorized,
-                "pages_total": pages_total,
-                "chunks_created": total_chunks_created,
-                "vectors_upserted": total_vectors_upserted,
-                "embed_tokens": total_embed_tokens,
-                "embed_batches": total_embed_batches,
-                "pages_failed": total_pages_failed,
-            },
+            job_id, "completed", completed=datetime.now(timezone.utc), progress=final,
         )
     except Exception as exc:
         logger.exception("Index job %s failed for tenant %s", job_id, tenant_id)
@@ -235,6 +234,11 @@ async def stop_index(tenant_id: UUID, job_id: UUID) -> None:
         raise KeyError("index_job_not_found")
     if job.status in ("pending", "running"):
         await jobs_storage.request_cancel(job_id)
+        await jobs_storage.update_job_status(
+            job_id, "failed",
+            error="Stopped by user",
+            completed=datetime.now(timezone.utc),
+        )
 
 
 async def get_index_status(tenant_id: UUID, job_id: UUID) -> Job:
@@ -306,7 +310,6 @@ async def _embed_texts(tenant_id: UUID, texts: list[str]) -> tuple[list[list[flo
                     total_tokens += e.statistics.token_count
                 except Exception:
                     pass
-            time.sleep(0.5)
         return results, total_tokens, batch_count
 
     return await asyncio.wait_for(asyncio.to_thread(_call), timeout=120.0)

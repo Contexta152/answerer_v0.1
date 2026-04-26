@@ -4,18 +4,24 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
 from storage.db import get_pool
 from storage.jobs import claim_pending_job, update_job_status
-from storage.postgres import create_tables
+from storage.postgres import create_tables, touch_worker_heartbeat, upsert_worker_heartbeat
 from services.crawl import _run_crawl
 from services.index import run_index_job
 
 logger = logging.getLogger(__name__)
 
-_POLL_INTERVAL = 5  # seconds
+_POLL_INTERVAL  = 5     # seconds between claim attempts
+_JOB_TIMEOUT    = 1800  # 30 minutes max per job
+_MAX_CONCURRENT = 3     # concurrent jobs per pool
+_HEARTBEAT_TTL  = 60    # seconds before health check fails
+
+_last_heartbeat: float = 0.0
 
 
 async def _reset_stale_running_jobs() -> None:
@@ -57,12 +63,66 @@ async def _dispatch(job: dict) -> None:
         raise ValueError(f"Unknown job_type: {job_type!r}")
 
 
+async def _run_job(job: dict) -> None:
+    try:
+        await asyncio.wait_for(_dispatch(job), timeout=_JOB_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.error("Job %s timed out after %ds", job["job_id"], _JOB_TIMEOUT)
+        try:
+            await update_job_status(
+                job["job_id"], "failed",
+                error=f"Job timed out after {_JOB_TIMEOUT // 60} minutes",
+                completed=datetime.now(timezone.utc),
+            )
+        except Exception:
+            pass
+    except Exception as exc:
+        logger.exception("Job %s failed: %s", job["job_id"], exc)
+        try:
+            await update_job_status(
+                job["job_id"], "failed",
+                error=str(exc),
+                completed=datetime.now(timezone.utc),
+            )
+        except Exception:
+            pass
+
+
+async def _pool(job_type: str) -> None:
+    global _last_heartbeat
+    active: set[asyncio.Task] = set()
+    logger.info("Pool '%s' started (max_concurrent=%d)", job_type, _MAX_CONCURRENT)
+    _tick = 0
+    while True:
+        try:
+            _last_heartbeat = time.monotonic()
+            active = {t for t in active if not t.done()}
+            while len(active) < _MAX_CONCURRENT:
+                job = await claim_pending_job(job_type)
+                if job is None:
+                    break
+                active.add(asyncio.create_task(_run_job(job)))
+            if job_type == "crawl" and _tick % 6 == 0:
+                try:
+                    await touch_worker_heartbeat("default")
+                except Exception:
+                    pass
+            _tick += 1
+        except Exception as exc:
+            logger.exception("Pool '%s' loop error: %s", job_type, exc)
+        await asyncio.sleep(_POLL_INTERVAL)
+
+
 async def _health_server() -> None:
     port = int(os.environ.get("PORT", 8080))
 
     async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         await reader.read(1024)
-        writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+        stale = _last_heartbeat > 0 and (time.monotonic() - _last_heartbeat) > _HEARTBEAT_TTL
+        if stale:
+            writer.write(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 5\r\n\r\nstale")
+        else:
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
         await writer.drain()
         writer.close()
 
@@ -75,31 +135,9 @@ async def _health_server() -> None:
 async def _worker_loop() -> None:
     await create_tables()
     await _reset_stale_running_jobs()
-    logger.info("Worker polling for jobs (interval=%ds)", _POLL_INTERVAL)
-    while True:
-        try:
-            job = await claim_pending_job()
-            if job is None:
-                await asyncio.sleep(_POLL_INTERVAL)
-                continue
-
-            try:
-                await _dispatch(job)
-            except Exception as exc:
-                logger.exception("Job %s failed: %s", job["job_id"], exc)
-                try:
-                    await update_job_status(
-                        job["job_id"],
-                        "failed",
-                        error=str(exc),
-                        completed=datetime.now(timezone.utc),
-                    )
-                except Exception:
-                    pass
-
-        except Exception as exc:
-            logger.exception("Worker loop error: %s", exc)
-            await asyncio.sleep(_POLL_INTERVAL)
+    await upsert_worker_heartbeat("default", datetime.now(timezone.utc))
+    logger.info("Worker polling (interval=%ds, max_concurrent=%d per pool)", _POLL_INTERVAL, _MAX_CONCURRENT)
+    await asyncio.gather(_pool("crawl"), _pool("index"))
 
 
 async def main() -> None:

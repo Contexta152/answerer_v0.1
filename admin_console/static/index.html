@@ -490,11 +490,19 @@
     <!-- JOBS ─────────────────────────────────────────────────────────────── -->
     <div id="tab-jobs" class="tab-panel">
       <div class="page-header">
-        <h1>Jobs</h1>
-        <p>Check the status of crawl and index jobs, or stop a running job.</p>
+        <div>
+          <h1>Jobs</h1>
+          <p>All crawl and index jobs for this tenant.</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="jobs-refresh-btn">↻ Refresh</button>
       </div>
 
-      <div class="card">
+      <div id="jobs-list" class="card card-flush">
+        <div class="loading">Loading…</div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div style="font-weight:700;font-size:.875rem;margin-bottom:12px">Manual Job Lookup</div>
         <div class="form-row">
           <div class="form-group">
             <label for="job-type">Job Type</label>
@@ -508,12 +516,10 @@
             <input type="text" id="job-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" class="mono">
           </div>
         </div>
-
         <div class="btn-row">
           <button class="btn btn-primary" id="job-check-btn">Check Status</button>
           <button class="btn btn-danger" id="job-stop-btn">Stop Job</button>
         </div>
-
         <div id="job-content" class="section-content"></div>
       </div>
     </div>
@@ -837,6 +843,7 @@ const tabLoaders = {
   qlog:          () => applyPeriodPill('qlog-pills', 'qlog-from', 'qlog-to', 'qlog-custom-range', 7, () => loadQlog(0)),
   analytics:     () => applyPeriodPill('an-pills', 'an-from', 'an-to', 'an-custom-range', 7, loadAnalytics),
   costs:         () => applyPeriodPill('cost-pills', 'cost-from', 'cost-to', 'cost-custom-range', 7, loadCosts),
+  jobs:          loadJobs,
 };
 
 function showTab(name) {
@@ -2358,6 +2365,95 @@ async function loadGaplist() {
 }
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
+
+async function loadJobs() {
+  const el = document.getElementById('jobs-list');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawls`);
+    const d = await res.json();
+    if (!res.ok) { el.innerHTML = `<div class="msg-err">Error: ${d.detail||'Failed'}</div>`; return; }
+    renderJobsList(d.items || []);
+  } catch(e) { if (e.message !== 'Session expired') el.innerHTML = '<div class="msg-err">Failed to load jobs.</div>'; }
+}
+
+const _jobStatusCls = {pending:'badge-yellow', running:'badge-blue', completed:'badge-green', failed:'badge-red'};
+
+function renderJobsList(kbs) {
+  const el = document.getElementById('jobs-list');
+  if (!kbs.length) { el.innerHTML = '<div class="empty-state">No jobs found.</div>'; return; }
+
+  const now = Date.now();
+  const rows = [];
+
+  for (const kb of kbs) {
+    const kbName = kb.name || kb.url || '—';
+
+    const crawlStarted = kb.started ? new Date(kb.started).getTime() : null;
+    const crawlStalled = kb.status === 'running' && crawlStarted && (now - crawlStarted) > 10 * 60 * 1000;
+    rows.push({
+      name: kbName, type: 'Crawl', jobId: kb.job_id,
+      status: kb.status || '—', stalled: crawlStalled,
+      created: kb.created, completed: kb.completed, error: kb.error,
+      active: kb.status === 'running' || kb.status === 'pending',
+    });
+
+    if (kb.index_job_id) {
+      const idxCreated = kb.created ? new Date(kb.created).getTime() : null;
+      const idxStalled = kb.index_status === 'running' && idxCreated && (now - idxCreated) > 10 * 60 * 1000;
+      rows.push({
+        name: kbName, type: 'Index', jobId: kb.index_job_id,
+        status: kb.index_status || '—', stalled: idxStalled,
+        created: kb.created, completed: kb.index_completed, error: null,
+        active: kb.index_status === 'running' || kb.index_status === 'pending',
+      });
+    }
+  }
+
+  rows.sort((a, b) => (b.active ? 1 : 0) - (a.active ? 1 : 0));
+
+  const html = rows.map(r => {
+    const sc = _jobStatusCls[r.status] || 'badge-gray';
+    const stalled = r.stalled ? ' <span class="badge badge-red">stalled?</span>' : '';
+    const stop = r.active
+      ? `<button class="btn btn-warning btn-sm" data-action="jobs-stop" data-type="${r.type === 'Crawl' ? 'crawl' : 'index'}" data-id="${esc(r.jobId)}">Stop</button>`
+      : '';
+    return `<tr>
+      <td>${esc(r.name)}</td>
+      <td>${esc(r.type)}</td>
+      <td class="mono" style="font-size:.75rem;word-break:break-all;user-select:all">${esc(r.jobId)}</td>
+      <td><span class="badge ${sc}">${esc(r.status)}</span>${stalled}</td>
+      <td class="nowrap">${r.created ? fmtDate(r.created) : '—'}</td>
+      <td class="nowrap">${r.completed ? fmtDate(r.completed) : '—'}</td>
+      <td style="max-width:200px;font-size:.8rem">${r.error ? `<span class="msg-err">${esc(r.error)}</span>` : '—'}</td>
+      <td>${stop}</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<div class="table-scroll"><table>
+    <thead><tr>
+      <th>KB Name</th><th>Type</th><th>Job ID</th><th>Status</th>
+      <th>Created</th><th>Completed</th><th>Error</th><th></th>
+    </tr></thead>
+    <tbody>${html}</tbody>
+  </table></div>`;
+}
+
+document.getElementById('jobs-refresh-btn').addEventListener('click', loadJobs);
+
+document.getElementById('jobs-list').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-action="jobs-stop"]');
+  if (!btn) return;
+  const type = btn.dataset.type;
+  const id   = btn.dataset.id;
+  if (!confirm(`Stop ${type} job ${id}?`)) return;
+  btn.disabled = true;
+  try {
+    const res = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/${type}/${id}/stop`, {method: 'POST'});
+    if (res.ok) loadJobs();
+    else { const d = await res.json(); alert(`Stop failed: ${d.detail||res.status}`); btn.disabled = false; }
+  } catch(e) { alert('Network error'); btn.disabled = false; }
+});
 
 function renderJobProgress(p) {
   if (!p) return '';

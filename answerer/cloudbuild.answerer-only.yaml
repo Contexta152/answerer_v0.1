@@ -1,0 +1,53 @@
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/project-3a1ab238-6b95-4034-8c6/answerer/answerer
+
+steps:
+  - id: pull-cache
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args: ['-c', 'docker pull ${_IMAGE}:latest || true']
+
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --cache-from=${_IMAGE}:latest
+      - -t=${_IMAGE}:latest
+      - .
+    waitFor: [pull-cache]
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_IMAGE}:latest
+    waitFor: [build]
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - answerer
+      - --image=${_IMAGE}:latest
+      - --region=us-central1
+      - --no-traffic
+    waitFor: [push]
+
+  - id: traffic
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - answerer
+      - --to-latest
+      - --region=us-central1
+    waitFor: [deploy]
+
+images:
+  - ${_IMAGE}:latest
+
+timeout: 1200s

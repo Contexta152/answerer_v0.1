@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vendor Console</title>
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='black'/><text x='50' y='68' font-family='sans-serif' font-size='56' font-weight='bold' text-anchor='middle' fill='white'>V</text></svg>">
+  <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body>
 
@@ -48,6 +49,13 @@
   </aside>
 
   <main id="main-content">
+
+    <!-- SYSTEM HEALTH CARDS ─────────────────────────────────────────────── -->
+    <div id="health-grid">
+      <div class="health-card health-card-gray" style="grid-column:1/-1;padding:12px 16px;">
+        <span style="font-size:.8rem;color:var(--text-dim)">Loading system health…</span>
+      </div>
+    </div>
 
     <!-- ORDERS ───────────────────────────────────────────────────────────── -->
     <div id="tab-orders" class="tab-panel active">
@@ -252,6 +260,9 @@ async function login() {
     document.getElementById('login-screen').style.display  = 'none';
     document.getElementById('app-shell').removeAttribute('hidden');
     showTab('orders');
+    loadSystemHealth();
+    if (window._healthInterval) clearInterval(window._healthInterval);
+    window._healthInterval = setInterval(loadSystemHealth, 30000);
   } catch(e) {
     document.getElementById('login-error').textContent = 'Network error';
   } finally {
@@ -266,6 +277,7 @@ async function logout() {
     });
   } catch(_) {}
   accessToken = null;
+  if (window._healthInterval) { clearInterval(window._healthInterval); window._healthInterval = null; }
   document.getElementById('app-shell').setAttribute('hidden', '');
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('password').value = '';
@@ -279,6 +291,141 @@ document.getElementById('refresh-btn').addEventListener('click', () => {
   else loadTenants();
 });
 document.getElementById('refresh-tenants-btn').addEventListener('click', loadTenants);
+
+// ── System Health ─────────────────────────────────────────────────────────────
+
+async function loadSystemHealth() {
+  try {
+    const res = await fetch(`${BASE}/v1/system-health`, {
+      headers: {'Authorization': `Bearer ${accessToken}`},
+    });
+    if (!res.ok) { renderHealthError(); return; }
+    renderHealth(await res.json());
+  } catch(_) { renderHealthError(); }
+}
+
+function relTime(iso) {
+  if (!iso) return '—';
+  const secs = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (secs < 5)    return 'just now';
+  if (secs < 60)   return `${secs}s ago`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
+function _card(colorCls, name, statusLabel, rows, rolloutService) {
+  const rowsHtml = rows.map(([label, value, cls]) =>
+    `<div class="health-row">
+      <span class="health-row-label">${esc(label)}</span>
+      <span class="health-row-value${cls ? ` ${cls}` : ''}">${esc(String(value ?? '—'))}</span>
+    </div>`
+  ).join('');
+  const btnHtml = rolloutService
+    ? `<button class="health-card-btn" data-svc="${esc(rolloutService)}" onclick="doRollout(this)">↺ Force latest</button>`
+    : '';
+  return `<div class="health-card health-card-${colorCls}">
+    <div class="health-card-header">
+      <span class="health-card-name">${esc(name)}</span>
+      <span class="health-card-status">${esc(statusLabel)}</span>
+    </div>
+    ${rowsHtml}
+    ${btnHtml}
+  </div>`;
+}
+
+async function doRollout(btn) {
+  const svc = btn.dataset.svc;
+  btn.disabled = true;
+  btn.textContent = 'Rolling out…';
+  try {
+    const res = await fetch(`${BASE}/v1/services/${svc}/rollout`, {
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${accessToken}`},
+    });
+    if (res.ok) {
+      btn.textContent = 'Done — refreshing…';
+      setTimeout(loadSystemHealth, 4000);
+    } else {
+      const d = await res.json().catch(() => ({}));
+      btn.textContent = 'Failed';
+      console.error('Rollout failed:', d.detail);
+      setTimeout(() => { btn.disabled = false; btn.textContent = '↺ Force latest'; }, 3000);
+    }
+  } catch(_) {
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '↺ Force latest'; }, 3000);
+  }
+}
+
+function renderHealthError() {
+  const cards = [
+    _card('red', 'Answerer API', 'Unreachable', []),
+    _card('red', 'Database',     'Unreachable', []),
+    _card('red', 'Qdrant',       'Unreachable', []),
+    _card('red', 'Worker Crawl', 'Unknown',     []),
+    _card('red', 'Worker Index', 'Unknown',     []),
+  ].join('') + `<div id="health-updated">unavailable</div>`;
+  document.getElementById('health-grid').innerHTML = cards;
+}
+
+function renderHealth(d) {
+  const errRate = d.error_rate_24h || 0;
+  const avgMs   = d.avg_response_ms_24h;
+
+  // Answerer
+  const answererCard = _card('green', 'Answerer API', 'Online', [
+    ['Restarted',  relTime(d.answerer_started_at)],
+    ['Q today',    (d.questions_today || 0).toLocaleString()],
+    ['Avg latency', avgMs != null ? `${avgMs.toLocaleString()} ms` : '—'],
+    ['Error rate 24h', `${errRate.toFixed(1)}%`, errRate >= 15 ? 'danger' : errRate >= 5 ? 'warn' : ''],
+  ], 'answerer');
+
+  // Database
+  const susp = d.tenants?.suspended || 0;
+  const dbCard = _card('green', 'Database', 'Connected', [
+    ['Active tenants', (d.tenants?.active || 0).toLocaleString()],
+    ['Suspended',      susp.toLocaleString(), susp > 0 ? 'danger' : ''],
+    ['Failed jobs 1h', (d.failed_last_hour || 0).toLocaleString(), d.failed_last_hour > 0 ? 'danger' : ''],
+  ]);
+
+  // Qdrant
+  const qOk = d.qdrant_ok;
+  const qdrantCard = _card(
+    qOk ? 'green' : 'red', 'Qdrant', qOk ? 'Reachable' : 'Unreachable',
+    [
+      ['Collections', d.qdrant_collections != null ? d.qdrant_collections.toLocaleString() : '—'],
+      ['Tenant vectors', 'per collection', 'muted'],
+    ]
+  );
+
+  // Worker pools
+  const wHb = d.worker || {};
+  const workerCards = ['crawl', 'index'].map(type => {
+    const info       = (d.jobs || {})[type] || {};
+    const running    = info.running  || 0;
+    const pending    = info.pending  || 0;
+    const oldestSecs = (d.oldest_pending_secs || {})[type] || 0;
+    let colorCls, statusLabel;
+    if (pending === 0) {
+      colorCls = 'green';  statusLabel = running > 0 ? 'Running' : 'Idle';
+    } else if (running > 0 || oldestSecs < 300) {
+      colorCls = 'yellow'; statusLabel = 'Processing';
+    } else {
+      colorCls = 'red';    statusLabel = `Stalled ${Math.round(oldestSecs / 60)}m`;
+    }
+    return _card(colorCls, `Worker ${type.charAt(0).toUpperCase() + type.slice(1)}`, statusLabel, [
+      ['Restarted',  relTime(wHb.started_at)],
+      ['Last seen',  relTime(wHb.last_seen)],
+      ['Running',    `${running} / 3`],
+      ['Pending',    pending.toLocaleString(), pending > 5 ? 'warn' : ''],
+    ], 'worker');
+  }).join('');
+
+  document.getElementById('health-grid').innerHTML =
+    answererCard + dbCard + qdrantCard + workerCards +
+    `<div id="health-updated">updated ${new Date().toLocaleTimeString()}</div>`;
+}
 
 // ── Orders ────────────────────────────────────────────────────────────────────
 
@@ -479,6 +626,19 @@ function renderTable(tenants) {
               <div class="detail-cell-value small">${fmtDate(t.created)}</div>
             </div>
           </div>
+          <div class="prompt-editor-wrap" id="prompt-wrap-${t.tenant_id}">
+            <div class="prompt-editor-header">
+              <span class="prompt-editor-title">System Prompt</span>
+              <span class="prompt-editor-hint">Only visible to vendors — never sent to clients or users</span>
+            </div>
+            <div class="prompt-loading" id="prompt-loading-${t.tenant_id}">Loading…</div>
+            <textarea class="prompt-textarea" id="prompt-ta-${t.tenant_id}" rows="10" placeholder="Loading…" style="display:none"></textarea>
+            <div class="prompt-actions" id="prompt-actions-${t.tenant_id}" style="display:none">
+              <button class="btn btn-primary btn-sm" onclick="savePrompt('${t.tenant_id}')">Save prompt</button>
+              <button class="btn btn-secondary btn-sm" onclick="resetPrompt('${t.tenant_id}')">Reset to default</button>
+              <span class="prompt-msg" id="prompt-msg-${t.tenant_id}"></span>
+            </div>
+          </div>
         </td>
       </tr>`;
   }).join('');
@@ -570,7 +730,62 @@ document.getElementById('table-wrap').addEventListener('click', async e => {
   const isOpen = !detailRow.classList.contains('hidden');
   detailRow.classList.toggle('hidden', isOpen);
   btn.textContent = isOpen ? '▶' : '▼';
+  if (!isOpen) loadPrompt(id);
 });
+
+// ── System Prompt ─────────────────────────────────────────────────────────────
+
+let _defaultPrompt = '';
+
+async function loadPrompt(tenantId) {
+  const loadingEl = document.getElementById(`prompt-loading-${tenantId}`);
+  const ta        = document.getElementById(`prompt-ta-${tenantId}`);
+  const actions   = document.getElementById(`prompt-actions-${tenantId}`);
+  if (!ta || ta.dataset.loaded === '1') return;
+  try {
+    const res  = await fetch(`${BASE}/v1/tenants/${tenantId}/system-prompt`, {
+      headers: {'Authorization': `Bearer ${accessToken}`},
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to load');
+    _defaultPrompt = data.default_prompt || '';
+    ta.value = data.system_prompt || data.default_prompt || '';
+    ta.dataset.loaded    = '1';
+    ta.dataset.defaultPr = data.default_prompt || '';
+    loadingEl.style.display = 'none';
+    ta.style.display      = '';
+    actions.style.display = '';
+  } catch(err) {
+    if (loadingEl) loadingEl.textContent = `Error: ${err.message}`;
+  }
+}
+
+async function savePrompt(tenantId) {
+  const ta    = document.getElementById(`prompt-ta-${tenantId}`);
+  const msgEl = document.getElementById(`prompt-msg-${tenantId}`);
+  if (!ta) return;
+  const prompt = ta.value.trim() || null;
+  msgEl.textContent = ''; msgEl.className = 'prompt-msg';
+  try {
+    const res = await fetch(`${BASE}/v1/tenants/${tenantId}/system-prompt`, {
+      method: 'PUT',
+      headers: {'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json'},
+      body: JSON.stringify({system_prompt: prompt}),
+    });
+    const data = await res.json();
+    if (!res.ok) { msgEl.textContent = data.detail || 'Save failed'; msgEl.className = 'prompt-msg prompt-msg-err'; return; }
+    msgEl.textContent = 'Saved'; msgEl.className = 'prompt-msg prompt-msg-ok';
+    setTimeout(() => { msgEl.textContent = ''; }, 2000);
+  } catch(err) { msgEl.textContent = `Error: ${err.message}`; msgEl.className = 'prompt-msg prompt-msg-err'; }
+}
+
+async function resetPrompt(tenantId) {
+  const ta    = document.getElementById(`prompt-ta-${tenantId}`);
+  const msgEl = document.getElementById(`prompt-msg-${tenantId}`);
+  if (!ta) return;
+  ta.value = ta.dataset.defaultPr || '';
+  msgEl.textContent = 'Reset to default — click Save to apply'; msgEl.className = 'prompt-msg';
+}
 
 // ── Save quota ────────────────────────────────────────────────────────────────
 

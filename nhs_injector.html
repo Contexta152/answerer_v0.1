@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NHS Query Injector</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
+
+    header { background: #003087; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 1.2rem; font-weight: 600; color: #fff; }
+    .nhs-logo { background: #fff; color: #003087; font-weight: 900; font-size: 1rem; padding: 4px 10px; border-radius: 4px; letter-spacing: -0.5px; }
+
+    .config-panel { background: #111; border-bottom: 1px solid #222; padding: 16px 24px; display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .config-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: #999; }
+    .config-panel input { background: #1a1a1a; border: 1px solid #333; color: #e0e0e0; padding: 6px 10px; border-radius: 6px; font-size: 0.85rem; width: 320px; }
+    .config-panel input.short { width: 120px; }
+    button.btn { padding: 8px 18px; border-radius: 6px; border: none; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+    button.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.run { background: #003087; color: #fff; }
+    button.stop { background: #c0392b; color: #fff; }
+    button.clear { background: #222; color: #aaa; }
+
+    .stats-bar { display: flex; gap: 0; background: #111; border-bottom: 1px solid #222; }
+    .stat { flex: 1; padding: 12px 20px; border-right: 1px solid #222; }
+    .stat:last-child { border-right: none; }
+    .stat .label { font-size: 0.72rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .stat .value { font-size: 1.4rem; font-weight: 700; color: #fff; }
+    .stat .value.green { color: #27ae60; }
+    .stat .value.red { color: #e74c3c; }
+    .stat .value.blue { color: #3498db; }
+    .stat .value.amber { color: #f39c12; }
+
+    .progress-wrap { background: #111; padding: 10px 24px; border-bottom: 1px solid #222; display: none; }
+    .progress-track { background: #222; border-radius: 99px; height: 6px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #003087, #005eb8); border-radius: 99px; width: 0%; transition: width 0.3s; }
+    .progress-label { font-size: 0.75rem; color: #666; margin-top: 6px; }
+
+    .results { padding: 16px 24px; display: flex; flex-direction: column; gap: 10px; }
+    .result-card { background: #111; border: 1px solid #222; border-radius: 8px; overflow: hidden; }
+    .result-card.success { border-left: 3px solid #27ae60; }
+    .result-card.error { border-left: 3px solid #e74c3c; }
+    .result-card.pending { border-left: 3px solid #555; }
+    .result-card.running { border-left: 3px solid #3498db; animation: pulse-border 1s infinite; }
+    @keyframes pulse-border { 0%,100% { border-left-color: #3498db; } 50% { border-left-color: #1a5276; } }
+
+    .card-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; cursor: pointer; user-select: none; }
+    .card-q { font-size: 0.85rem; font-weight: 500; color: #ddd; flex: 1; padding-right: 12px; }
+    .card-meta { display: flex; gap: 10px; align-items: center; flex-shrink: 0; font-size: 0.75rem; color: #666; }
+    .badge { padding: 2px 8px; border-radius: 99px; font-size: 0.7rem; font-weight: 600; }
+    .badge.ok { background: #1a3d2b; color: #27ae60; }
+    .badge.err { background: #3d1a1a; color: #e74c3c; }
+    .badge.wait { background: #222; color: #666; }
+    .badge.run { background: #1a2d3d; color: #3498db; }
+    .chevron { color: #555; transition: transform 0.2s; font-size: 0.75rem; }
+    .chevron.open { transform: rotate(180deg); }
+
+    .card-body { display: none; padding: 12px 14px; border-top: 1px solid #1a1a1a; font-size: 0.82rem; line-height: 1.6; color: #bbb; }
+    .card-body.open { display: block; }
+    .card-body .answer-text { white-space: pre-wrap; word-break: break-word; }
+    .card-body .sources { margin-top: 8px; font-size: 0.75rem; color: #555; }
+    .card-body .err-msg { color: #e74c3c; font-family: monospace; }
+    .card-body .timing { color: #555; font-size: 0.72rem; margin-top: 6px; }
+
+    .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #333; border-top-color: #3498db; border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="nhs-logo">NHS</div>
+  <h1>Query Injector — 100 NHS Questions</h1>
+</header>
+
+<div class="config-panel">
+  <label>API Base URL <input id="baseUrl" value="http://localhost:8000" /></label>
+  <label>Tenant ID <input id="tenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" /></label>
+  <label>Widget Key <input id="widgetKey" placeholder="wk_..." /></label>
+  <label>Concurrency <input id="concurrency" class="short" type="number" value="5" min="1" max="20" /></label>
+  <button class="btn run" id="runBtn" onclick="startRun()">Run 100 Queries</button>
+  <button class="btn stop" id="stopBtn" onclick="stopRun()" style="display:none">Stop</button>
+  <button class="btn clear" onclick="clearResults()">Clear</button>
+</div>
+
+<div class="stats-bar">
+  <div class="stat"><div class="label">Total</div><div class="value" id="sTotal">0</div></div>
+  <div class="stat"><div class="label">Done</div><div class="value green" id="sDone">0</div></div>
+  <div class="stat"><div class="label">Errors</div><div class="value red" id="sErrors">0</div></div>
+  <div class="stat"><div class="label">Avg Latency</div><div class="value blue" id="sAvgMs">—</div></div>
+  <div class="stat"><div class="label">P95 Latency</div><div class="value amber" id="sP95">—</div></div>
+  <div class="stat"><div class="label">Fastest</div><div class="value" id="sMin">—</div></div>
+  <div class="stat"><div class="label">Slowest</div><div class="value" id="sMax">—</div></div>
+</div>
+
+<div class="progress-wrap" id="progressWrap">
+  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="progress-label" id="progressLabel">0 / 100</div>
+</div>
+
+<div class="results" id="results"></div>
+
+<script>
+const NHS_QUESTIONS = [
+  "What are the symptoms of type 2 diabetes?",
+  "How do I register with a GP?",
+  "What is the NHS 111 service and when should I use it?",
+  "What are the signs of a stroke?",
+  "How long is the waiting time for a routine GP appointment?",
+  "What vaccinations does the NHS offer children?",
+  "How do I get a repeat prescription?",
+  "What is a clinical commissioning group?",
+  "What are the symptoms of appendicitis?",
+  "How does the NHS complaints procedure work?",
+  "What is the difference between a GP and a specialist consultant?",
+  "What should I do if I think I am having a heart attack?",
+  "How do I access mental health support through the NHS?",
+  "What are the eligibility criteria for free NHS prescriptions?",
+  "What is NICE and what does it do?",
+  "How do I get a referral to a hospital specialist?",
+  "What are the symptoms of asthma?",
+  "How does the NHS dentist system work?",
+  "What is an integrated care board?",
+  "How do I appeal an NHS treatment decision?",
+  "What are the signs of sepsis?",
+  "What is the NHS personal health budget?",
+  "How long should I wait for a cancer referral?",
+  "What are the symptoms of a UTI?",
+  "How do I find an NHS optician near me?",
+  "What are the NICE guidelines for hypertension treatment?",
+  "What is the NHS e-Referral Service?",
+  "How do I get an emergency appointment at my GP?",
+  "What are the symptoms of coeliac disease?",
+  "What is NHS England and what does it do?",
+  "How does NHS continuing healthcare work?",
+  "What are the symptoms of depression?",
+  "How do I access IAPT therapy on the NHS?",
+  "What is the NHS long-term plan?",
+  "What are the rules around NHS overseas visitor charges?",
+  "How do I get a home visit from my GP?",
+  "What is a care coordinator?",
+  "What are the symptoms of COPD?",
+  "How does NHS blood pressure monitoring work?",
+  "What is the NHS friends and family test?",
+  "How do I access physiotherapy on the NHS?",
+  "What are the symptoms of rheumatoid arthritis?",
+  "How do I get a second opinion on an NHS diagnosis?",
+  "What is an NHS Foundation Trust?",
+  "How does the NHS manage waiting lists?",
+  "What are the symptoms of Crohn's disease?",
+  "How do I access talking therapies for anxiety?",
+  "What is NHS Direct and is it still available?",
+  "How do I claim for NHS travel costs?",
+  "What are the symptoms of multiple sclerosis?",
+  "How does NHS data sharing work and can I opt out?",
+  "What is a patient record summary and how do I access it?",
+  "How do I report a safety concern about an NHS provider?",
+  "What are the signs of meningitis?",
+  "How does the NHS handle end-of-life care?",
+  "What is the NHS Talking Therapies programme?",
+  "How do I get a blood test on the NHS?",
+  "What are the symptoms of hypothyroidism?",
+  "How does shared decision making work in the NHS?",
+  "What is a Community Interest Company in the context of NHS services?",
+  "How do I access NHS addiction and substance misuse support?",
+  "What are the symptoms of polycystic ovary syndrome?",
+  "How does the GP Quality and Outcomes Framework work?",
+  "What is the NHS app and what can I use it for?",
+  "How do I transfer my GP records when moving?",
+  "What are the symptoms of atrial fibrillation?",
+  "How does the NHS handle rare diseases?",
+  "What is NHS Improvement?",
+  "How do I access bariatric surgery on the NHS?",
+  "What are the symptoms of lupus?",
+  "How do I report a complaint about a GP?",
+  "What is the NHS Constitution and what rights does it give me?",
+  "How do I get a yellow fever vaccination on the NHS?",
+  "What are the symptoms of osteoporosis?",
+  "How does NHS urgent treatment work?",
+  "What is a primary care network?",
+  "How do I get carers support through the NHS?",
+  "What are the symptoms of Parkinson's disease?",
+  "How does NHS 111 online work?",
+  "What is the Choose and Book system?",
+  "How do I get a cholesterol test on the NHS?",
+  "What are the symptoms of anemia?",
+  "How does NHS public health work?",
+  "What is the NHS diabetic eye screening programme?",
+  "How do I access speech and language therapy on the NHS?",
+  "What are the symptoms of endometriosis?",
+  "How does the NHS cervical screening programme work?",
+  "What is NHS Professionals?",
+  "How do I get tested for STIs on the NHS?",
+  "What are the symptoms of psoriasis?",
+  "How does the NHS breast screening programme work?",
+  "What is a care plan and how do I get one?",
+  "How do I access NHS wheelchair services?",
+  "What are the symptoms of bowel cancer?",
+  "How does the NHS aortic aneurysm screening programme work?",
+  "What is CAMHS and how do I access it?",
+  "How do I get a hearing test on the NHS?",
+  "What are the symptoms of kidney disease?",
+  "How does NHS community nursing work?",
+  "What is the NHS health check?",
+];
+
+let running = false;
+let aborted = false;
+let latencies = [];
+let doneCount = 0;
+let errCount = 0;
+
+function stopRun() {
+  aborted = true;
+  document.getElementById('stopBtn').disabled = true;
+}
+
+function clearResults() {
+  document.getElementById('results').innerHTML = '';
+  latencies = [];
+  doneCount = 0;
+  errCount = 0;
+  updateStats();
+  document.getElementById('progressWrap').style.display = 'none';
+}
+
+function updateStats() {
+  const total = doneCount + errCount;
+  document.getElementById('sTotal').textContent = total;
+  document.getElementById('sDone').textContent = doneCount;
+  document.getElementById('sErrors').textContent = errCount;
+  if (latencies.length) {
+    const sorted = [...latencies].sort((a,b) => a-b);
+    const avg = Math.round(latencies.reduce((a,b)=>a+b,0) / latencies.length);
+    const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? sorted[sorted.length-1];
+    document.getElementById('sAvgMs').textContent = avg + 'ms';
+    document.getElementById('sP95').textContent = p95 + 'ms';
+    document.getElementById('sMin').textContent = sorted[0] + 'ms';
+    document.getElementById('sMax').textContent = sorted[sorted.length-1] + 'ms';
+  } else {
+    document.getElementById('sAvgMs').textContent = '—';
+    document.getElementById('sP95').textContent = '—';
+    document.getElementById('sMin').textContent = '—';
+    document.getElementById('sMax').textContent = '—';
+  }
+}
+
+function makeCard(idx, question) {
+  const card = document.createElement('div');
+  card.className = 'result-card pending';
+  card.id = `card-${idx}`;
+  card.innerHTML = `
+    <div class="card-header" onclick="toggleCard(${idx})">
+      <div class="card-q">${idx+1}. ${question}</div>
+      <div class="card-meta">
+        <span class="badge wait" id="badge-${idx}">Waiting</span>
+        <span id="time-${idx}"></span>
+        <span class="chevron" id="chev-${idx}">▼</span>
+      </div>
+    </div>
+    <div class="card-body" id="body-${idx}"></div>
+  `;
+  return card;
+}
+
+function toggleCard(idx) {
+  const body = document.getElementById(`body-${idx}`);
+  const chev = document.getElementById(`chev-${idx}`);
+  body.classList.toggle('open');
+  chev.classList.toggle('open');
+}
+
+function setRunning(idx) {
+  const card = document.getElementById(`card-${idx}`);
+  card.className = 'result-card running';
+  document.getElementById(`badge-${idx}`).className = 'badge run';
+  document.getElementById(`badge-${idx}`).innerHTML = '<span class="spinner"></span>';
+}
+
+function setDone(idx, ms, answer) {
+  const card = document.getElementById(`card-${idx}`);
+  card.className = 'result-card success';
+  document.getElementById(`badge-${idx}`).className = 'badge ok';
+  document.getElementById(`badge-${idx}`).textContent = 'OK';
+  document.getElementById(`time-${idx}`).textContent = ms + 'ms';
+  const body = document.getElementById(`body-${idx}`);
+  body.innerHTML = `<div class="answer-text">${escHtml(answer)}</div><div class="timing">${ms}ms</div>`;
+}
+
+function setError(idx, ms, msg) {
+  const card = document.getElementById(`card-${idx}`);
+  card.className = 'result-card error';
+  document.getElementById(`badge-${idx}`).className = 'badge err';
+  document.getElementById(`badge-${idx}`).textContent = 'ERR';
+  if (ms) document.getElementById(`time-${idx}`).textContent = ms + 'ms';
+  const body = document.getElementById(`body-${idx}`);
+  body.innerHTML = `<div class="err-msg">${escHtml(msg)}</div>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function runQuery(idx, question, baseUrl, tenantId, widgetKey) {
+  if (aborted) return;
+  setRunning(idx);
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`${baseUrl}/v1/tenants/${tenantId}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${widgetKey}` },
+      body: JSON.stringify({ question }),
+    });
+    const ms = Date.now() - t0;
+    if (!res.ok) {
+      const txt = await res.text();
+      setError(idx, ms, `HTTP ${res.status}: ${txt}`);
+      errCount++;
+    } else {
+      const data = await res.json();
+      const answer = data.answer ?? data.text ?? JSON.stringify(data);
+      setDone(idx, ms, answer);
+      latencies.push(ms);
+      doneCount++;
+    }
+  } catch(e) {
+    const ms = Date.now() - t0;
+    setError(idx, ms, e.message);
+    errCount++;
+  }
+  updateStats();
+}
+
+async function startRun() {
+  const baseUrl = document.getElementById('baseUrl').value.replace(/\/$/, '');
+  const tenantId = document.getElementById('tenantId').value.trim();
+  const widgetKey = document.getElementById('widgetKey').value.trim();
+  const concurrency = Math.max(1, Math.min(20, parseInt(document.getElementById('concurrency').value) || 5));
+
+  if (!tenantId || !widgetKey) { alert('Enter Tenant ID and Widget Key.'); return; }
+
+  aborted = false;
+  latencies = [];
+  doneCount = 0;
+  errCount = 0;
+  updateStats();
+
+  document.getElementById('runBtn').style.display = 'none';
+  document.getElementById('stopBtn').style.display = '';
+  document.getElementById('stopBtn').disabled = false;
+  document.getElementById('progressWrap').style.display = 'block';
+
+  const resultsEl = document.getElementById('results');
+  resultsEl.innerHTML = '';
+  const cards = NHS_QUESTIONS.map((q, i) => {
+    const card = makeCard(i, q);
+    resultsEl.appendChild(card);
+    return card;
+  });
+
+  let next = 0;
+  const total = NHS_QUESTIONS.length;
+
+  async function worker() {
+    while (next < total && !aborted) {
+      const idx = next++;
+      await runQuery(idx, NHS_QUESTIONS[idx], baseUrl, tenantId, widgetKey);
+      const done = doneCount + errCount;
+      document.getElementById('progressFill').style.width = (done / total * 100) + '%';
+      document.getElementById('progressLabel').textContent = `${done} / ${total}`;
+    }
+  }
+
+  const workers = Array.from({ length: concurrency }, () => worker());
+  await Promise.all(workers);
+
+  document.getElementById('runBtn').style.display = '';
+  document.getElementById('stopBtn').style.display = 'none';
+  document.getElementById('progressLabel').textContent = aborted ? `Stopped at ${doneCount + errCount} / ${total}` : `Complete — ${doneCount} ok, ${errCount} errors`;
+}
+</script>
+</body>
+</html>

@@ -827,3 +827,132 @@ tbody tr.summary-row:hover td { background: var(--surface-hi); }
 }
 
 .pagination-info { color: var(--text-sub); }
+
+/* ══ SYSTEM PROMPT EDITOR ════════════════════════════════════════════════════ */
+.prompt-editor-wrap        { border-top: 1px solid var(--border, #1a2d50); padding: 16px 20px 20px; }
+.prompt-editor-header      { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.prompt-editor-title       { font-size: .78rem; font-weight: 700; color: var(--text, #e2e8f0); letter-spacing: .02em; text-transform: uppercase; }
+.prompt-editor-hint        { font-size: .72rem; color: var(--text-sub, #64748b); }
+.prompt-loading            { font-size: .8rem; color: var(--text-sub, #64748b); }
+.prompt-textarea           { width: 100%; box-sizing: border-box; min-height: 180px; font-family: monospace; font-size: .8rem; line-height: 1.55; background: var(--bg, #060e1e); color: var(--text, #e2e8f0); border: 1px solid var(--border, #1a2d50); border-radius: 6px; padding: 10px 12px; resize: vertical; }
+.prompt-textarea:focus     { outline: none; border-color: var(--accent, #3b82f6); }
+.prompt-actions            { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.prompt-msg                { font-size: .78rem; color: var(--text-sub, #64748b); }
+.prompt-msg-ok             { color: #4ade80; }
+.prompt-msg-err            { color: #f87171; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SYSTEM HEALTH CARDS
+   ══════════════════════════════════════════════════════════════════════════ */
+
+#health-grid {
+  display:               grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap:                   12px;
+  margin-bottom:         28px;
+}
+
+.health-card {
+  background:    var(--surface);
+  border:        1px solid var(--border);
+  border-left:   3px solid var(--border);
+  border-radius: 8px;
+  padding:       14px 16px 16px;
+  min-width:     0;
+}
+
+.health-card-green  { border-left-color: var(--success); }
+.health-card-yellow { border-left-color: var(--warning); }
+.health-card-red    { border-left-color: var(--danger);  }
+.health-card-gray   { border-left-color: var(--text-dim); }
+
+.health-card-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             6px;
+  margin-bottom:   10px;
+  padding-bottom:  10px;
+  border-bottom:   1px solid var(--border);
+}
+
+.health-card-name {
+  font-size:      .7rem;
+  font-weight:    700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color:          var(--text-sub);
+}
+
+.health-card-status {
+  font-size:      .65rem;
+  font-weight:    700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.health-card-green  .health-card-status { color: var(--success); }
+.health-card-yellow .health-card-status { color: var(--warning); }
+.health-card-red    .health-card-status { color: var(--danger);  }
+.health-card-gray   .health-card-status { color: var(--text-dim); }
+
+.health-row {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     baseline;
+  gap:             8px;
+  padding:         3px 0;
+}
+
+.health-row-label {
+  font-size:      .67rem;
+  font-weight:    700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color:          var(--text-dim);
+  white-space:    nowrap;
+  flex-shrink:    0;
+}
+
+.health-row-value {
+  font-size:            .78rem;
+  font-weight:          600;
+  color:                var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align:           right;
+  min-width:            0;
+  overflow:             hidden;
+  text-overflow:        ellipsis;
+  white-space:          nowrap;
+}
+
+.health-row-value.warn   { color: var(--warning); }
+.health-row-value.danger { color: var(--danger);  }
+.health-row-value.muted  { color: var(--text-sub); font-weight: 400; }
+
+.health-card-btn {
+  display:       block;
+  width:         100%;
+  margin-top:    10px;
+  padding:       5px 8px;
+  font-size:     .7rem;
+  font-weight:   600;
+  font-family:   var(--font);
+  color:         var(--text-sub);
+  background:    var(--surface-hi);
+  border:        1px solid var(--border);
+  border-radius: 5px;
+  cursor:        pointer;
+  text-align:    center;
+}
+
+.health-card-btn:hover:not(:disabled) { color: var(--text); border-color: var(--border-hi); }
+.health-card-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+#health-updated {
+  grid-column:   1 / -1;
+  font-size:     .68rem;
+  color:         var(--text-dim);
+  text-align:    right;
+  margin-top:    -6px;
+}
