@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import time
 import uuid
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -291,27 +290,22 @@ async def _embed_texts(tenant_id: UUID, texts: list[str]) -> tuple[list[list[flo
                 TextEmbeddingInput(text=t, task_type="RETRIEVAL_DOCUMENT")
                 for t in batch
             ]
-            last_exc: Exception | None = None
-            for attempt in range(5):
-                try:
-                    embeddings = model.get_embeddings(inputs)
-                    last_exc = None
-                    break
-                except Exception as exc:
-                    last_exc = exc
-                    if attempt < 4:
-                        delay = 2 ** attempt
-                        logger.warning("Embed attempt %d failed, retrying in %ds: %s", attempt + 1, delay, exc)
-                        time.sleep(delay)
-            if last_exc is not None:
-                raise last_exc
+            embeddings = model.get_embeddings(inputs)
             batch_count += 1
+            _warned_stats = False
             for e in embeddings:
                 results.append(e.values)
                 try:
-                    total_tokens += e.statistics.token_count
-                except Exception:
-                    pass
+                    tc = e.statistics.token_count
+                    if tc is not None:
+                        total_tokens += tc
+                    elif not _warned_stats:
+                        logger.warning("Vertex AI embed returned no token_count in statistics")
+                        _warned_stats = True
+                except Exception as stats_exc:
+                    if not _warned_stats:
+                        logger.warning("Could not read embed token_count: %s", stats_exc)
+                        _warned_stats = True
         return results, total_tokens, batch_count
 
     return await asyncio.wait_for(asyncio.to_thread(_call), timeout=120.0)

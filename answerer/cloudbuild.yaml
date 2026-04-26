@@ -42,6 +42,7 @@ steps:
       - --add-cloudsql-instances=project-3a1ab238-6b95-4034-8c6:us-central1:answerer-db
       - --set-secrets=DATABASE_URL=answerer-db-url:latest,SERVICE_KEY=service-key:latest,JWT_SECRET=jwt-secret:latest
       - --set-env-vars=QDRANT_URL=http://10.128.0.3:6333,GOOGLE_CLOUD_PROJECT=project-3a1ab238-6b95-4034-8c6,GOOGLE_CLOUD_LOCATION=us-central1
+      - --no-cpu-throttling
       - --network=default
       - --subnet=default
       - --vpc-egress=private-ranges-only

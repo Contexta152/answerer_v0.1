@@ -152,7 +152,7 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
 
         async def _fetch_one(client: httpx.AsyncClient, url: str, depth: int):
             """Fetch a single page and return (new_links, stored_body | None)."""
-            nonlocal pages_skipped_robots, pages_skipped_scope, pages_skipped_http, pages_skipped_content
+            nonlocal pages_skipped_scope, pages_skipped_http, pages_skipped_content
             if not _in_scope(url):
                 pages_skipped_scope += 1
                 return [], None
