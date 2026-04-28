@@ -46,6 +46,7 @@ steps:
       - --network=default
       - --subnet=default
       - --vpc-egress=private-ranges-only
+      - --min-instances=1
     waitFor: [push]
 
   - id: deploy-answerer
