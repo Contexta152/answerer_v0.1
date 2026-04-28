@@ -94,9 +94,11 @@ async def delete_crawl(tenant_id: UUID, job_id: UUID) -> None:
 
 
 
-_CRAWL_CONCURRENCY    = 10   # parallel page fetches
+_CRAWL_CONCURRENCY    = 5    # parallel page fetches — higher values trigger CDN rate limits
 _PROGRESS_EVERY       = 5    # write progress to DB every N pages stored
 _CANCEL_CHECK_EVERY   = 10   # check cancel flag every N pages stored
+_FETCH_MAX_RETRIES    = 3    # max retries for HTTP-level transient failures (429, 5xx)
+_RETRY_STATUSES       = {429, 500, 502, 503, 504}
 
 
 async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: int, crawl_delay: float = 0.0, max_depth: int = 3) -> None:
@@ -156,13 +158,40 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
             if not _in_scope(url):
                 pages_skipped_scope += 1
                 return [], None
-            try:
-                resp = await client.get(url)
-            except (httpx.RequestError, httpx.HTTPStatusError) as e:
-                logger.debug("Crawl %s: request error %s: %s", job_id, url, e)
-                pages_skipped_http += 1
-                return [], None
+            # Timeouts get one immediate retry (catches transient blips) then give up —
+            # retrying more aggressively on a throttling CDN makes the cascade worse.
+            for timeout_attempt in range(2):
+                try:
+                    resp = await client.get(url)
+                    break
+                except httpx.TimeoutException:
+                    if timeout_attempt == 0:
+                        logger.debug("Crawl %s: timeout, retrying once: %s", job_id, url)
+                        continue
+                    logger.warning("Crawl %s: timeout after 2 attempts, skipping: %s", job_id, url)
+                    pages_skipped_http += 1
+                    return [], None
+                except httpx.RequestError as e:
+                    logger.warning("Crawl %s: network error %s: %s", job_id, url, e)
+                    pages_skipped_http += 1
+                    return [], None
+
+            # Retry transient HTTP errors (429, 5xx) with backoff
+            for attempt in range(_FETCH_MAX_RETRIES):
+                if resp.status_code not in _RETRY_STATUSES:
+                    break
+                retry_after = float(resp.headers.get("Retry-After", 2 ** attempt))
+                logger.debug("Crawl %s: HTTP %d, retrying in %.0fs: %s", job_id, resp.status_code, retry_after, url)
+                await asyncio.sleep(min(retry_after, 30))
+                try:
+                    resp = await client.get(url)
+                except httpx.RequestError as e:
+                    logger.warning("Crawl %s: network error on retry %s: %s", job_id, url, e)
+                    pages_skipped_http += 1
+                    return [], None
+
             if resp.status_code != 200:
+                logger.warning("Crawl %s: HTTP %d skipping: %s", job_id, resp.status_code, url)
                 pages_skipped_http += 1
                 return [], None
             content_type = resp.headers.get("content-type", "")

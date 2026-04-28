@@ -5,7 +5,9 @@ import logging
 import os
 import uuid
 from datetime import datetime, timezone
-from html.parser import HTMLParser
+import re
+
+from bs4 import BeautifulSoup
 from uuid import UUID
 
 import vertexai
@@ -18,8 +20,10 @@ from storage import qdrant
 
 logger = logging.getLogger(__name__)
 
-_EMBEDDING_MODEL  = "text-embedding-004"
-_EMBED_BATCH_SIZE = 250  # text-embedding-004 accepts up to 250 texts per call
+_EMBEDDING_MODEL   = "text-embedding-004"
+_EMBED_MAX_TEXTS   = 250        # hard API limit: texts per call
+_EMBED_MAX_TOKENS  = 18_000     # soft ceiling: 10% headroom under the 20k token limit
+_EMBED_TOKENS_PER_WORD = 1.5    # conservative estimate; retry-with-halving handles any remaining overruns
 
 _embed_model: "TextEmbeddingModel | None" = None
 _embed_model_lock = asyncio.Lock()
@@ -43,39 +47,20 @@ async def _get_embed_model() -> "TextEmbeddingModel":
         return _embed_model
 
 
-class _TextExtractor(HTMLParser):
-    """Strip HTML tags and return visible text content."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._parts: list[str] = []
-        self._skip = False
-
-    def handle_starttag(self, tag: str, attrs) -> None:
-        if tag in ("script", "style", "noscript"):
-            self._skip = True
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in ("script", "style", "noscript"):
-            self._skip = False
-
-    def handle_data(self, data: str) -> None:
-        if not self._skip:
-            stripped = data.strip()
-            if stripped:
-                self._parts.append(stripped)
-
-    def get_text(self) -> str:
-        return " ".join(self._parts)
+_BS_DECOMPOSE = [
+    "script", "style", "nav", "header", "footer",
+    "aside", "noscript", "form", "svg", "iframe",
+]
 
 
 def _extract_text(html: str) -> str:
-    extractor = _TextExtractor()
     try:
-        extractor.feed(html)
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(_BS_DECOMPOSE):
+            tag.decompose()
+        return soup.get_text(separator="\n\n", strip=True)
     except Exception:
-        pass
-    return extractor.get_text()
+        return ""
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
@@ -165,6 +150,14 @@ async def run_index_job(tenant_id: UUID, job_id: UUID, crawl_job_id: UUID) -> No
                     flat_chunks.append(chunk)
 
             if not flat_chunks:
+                sample_url = pages[0].get("url", "?") if pages else "?"
+                sample_text = _extract_text(pages[0]["content"])[:200] if pages else ""
+                sample_html = pages[0]["content"][:200] if pages else ""
+                logger.warning(
+                    "Index job: batch of %d pages produced no text chunks. "
+                    "First page: %s | extracted: %r | html_start: %r",
+                    len(pages), sample_url, sample_text, sample_html,
+                )
                 return
 
             try:
@@ -255,21 +248,110 @@ async def get_index_status(tenant_id: UUID, job_id: UUID) -> Job:
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
-    """
-    Word-based sliding-window chunker.
-    chunk_size and chunk_overlap are word counts (matching Settings defaults).
-    """
+_SENTENCE_END_RE = re.compile(r'(?<=[.!?])\s+')
+
+
+def _split_sentences(text: str) -> list[str]:
+    return [s.strip() for s in _SENTENCE_END_RE.split(text) if s.strip()]
+
+
+def _last_n_words(text: str, n: int) -> str:
+    if n <= 0:
+        return ""
+    words = text.split()
+    return " ".join(words[-n:]) if len(words) > n else text
+
+
+def _word_sliding_window(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    """Word-based fallback for oversized single sentences — original chunker behaviour."""
     words = text.split()
     if not words:
         return []
     step = max(1, chunk_size - chunk_overlap)
-    chunks = []
-    start = 0
+    chunks, start = [], 0
     while start < len(words):
         chunks.append(" ".join(words[start : start + chunk_size]))
         start += step
     return chunks
+
+
+def _split_paragraph(para: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    """Sentence-boundary splitting for a paragraph that exceeds chunk_size words."""
+    sentences = _split_sentences(para)
+    if not sentences:
+        return _word_sliding_window(para, chunk_size, chunk_overlap)
+
+    result: list[str] = []
+    current: list[str] = []
+    current_words = 0
+    prefix = ""
+
+    for sentence in sentences:
+        s_words = len(sentence.split())
+
+        if s_words > chunk_size:
+            if current:
+                flushed = (prefix + " " if prefix else "") + " ".join(current)
+                result.append(flushed.strip())
+                prefix = _last_n_words(flushed, chunk_overlap)
+                current, current_words = [], 0
+            sub = _word_sliding_window(sentence, chunk_size, chunk_overlap)
+            if sub and prefix:
+                sub[0] = (prefix + " " + sub[0]).strip()
+            result.extend(sub)
+            prefix = _last_n_words(sub[-1], chunk_overlap) if sub else prefix
+            continue
+
+        if current_words + s_words <= chunk_size:
+            current.append(sentence)
+            current_words += s_words
+        else:
+            flushed = (prefix + " " if prefix else "") + " ".join(current)
+            result.append(flushed.strip())
+            prefix = _last_n_words(flushed, chunk_overlap)
+            current, current_words = [sentence], s_words
+
+    if current:
+        flushed = (prefix + " " if prefix else "") + " ".join(current)
+        result.append(flushed.strip())
+
+    return [c for c in result if c]
+
+
+def _chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    """
+    Hierarchical chunker: paragraph → sentence → word fallback.
+    chunk_size and chunk_overlap are word counts (matching Settings defaults).
+    """
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        return []
+
+    result: list[str] = []
+    current: list[str] = []
+    current_words = 0
+
+    for para in paragraphs:
+        p_words = len(para.split())
+        if p_words == 0:
+            continue
+
+        if p_words > chunk_size:
+            if current:
+                result.append(" ".join(current))
+                current, current_words = [], 0
+            result.extend(_split_paragraph(para, chunk_size, chunk_overlap))
+        elif current_words + p_words <= chunk_size:
+            current.append(para)
+            current_words += p_words
+        else:
+            result.append(" ".join(current))
+            current, current_words = [para], p_words
+
+    if current:
+        result.append(" ".join(current))
+
+    return [c for c in result if c]
 
 
 async def _embed_texts(tenant_id: UUID, texts: list[str]) -> tuple[list[list[float]], int, int]:
@@ -284,28 +366,49 @@ async def _embed_texts(tenant_id: UUID, texts: list[str]) -> tuple[list[list[flo
         results: list[list[float]] = []
         total_tokens = 0
         batch_count = 0
-        for i in range(0, len(texts), _EMBED_BATCH_SIZE):
-            batch = texts[i : i + _EMBED_BATCH_SIZE]
-            inputs = [
-                TextEmbeddingInput(text=t, task_type="RETRIEVAL_DOCUMENT")
-                for t in batch
-            ]
-            embeddings = model.get_embeddings(inputs)
+
+        def _embed_batch(batch: list[str]) -> None:
+            nonlocal total_tokens, batch_count
+            inputs = [TextEmbeddingInput(text=t, task_type="RETRIEVAL_DOCUMENT") for t in batch]
+            try:
+                embeddings = model.get_embeddings(inputs)
+            except Exception as exc:
+                if "token" in str(exc).lower() and len(batch) > 1:
+                    logger.warning("Embed token limit exceeded (batch=%d), splitting in half", len(batch))
+                    mid = len(batch) // 2
+                    _embed_batch(batch[:mid])
+                    _embed_batch(batch[mid:])
+                    return
+                raise
             batch_count += 1
-            _warned_stats = False
+            warned = False
             for e in embeddings:
                 results.append(e.values)
                 try:
-                    tc = e.statistics.token_count
-                    if tc is not None:
-                        total_tokens += tc
-                    elif not _warned_stats:
-                        logger.warning("Vertex AI embed returned no token_count in statistics")
-                        _warned_stats = True
+                    stats = e.statistics
+                    if stats is not None and stats.token_count is not None:
+                        total_tokens += stats.token_count
+                    elif not warned:
+                        logger.warning("Vertex AI embed: token_count unavailable in statistics")
+                        warned = True
                 except Exception as stats_exc:
-                    if not _warned_stats:
+                    if not warned:
                         logger.warning("Could not read embed token_count: %s", stats_exc)
-                        _warned_stats = True
+                        warned = True
+
+        batch: list[str] = []
+        batch_tokens = 0
+        for text in texts:
+            est = max(1, int(len(text.split()) * _EMBED_TOKENS_PER_WORD))
+            if batch and (len(batch) >= _EMBED_MAX_TEXTS or batch_tokens + est > _EMBED_MAX_TOKENS):
+                _embed_batch(batch)
+                batch = []
+                batch_tokens = 0
+            batch.append(text)
+            batch_tokens += est
+        if batch:
+            _embed_batch(batch)
+
         return results, total_tokens, batch_count
 
     return await asyncio.wait_for(asyncio.to_thread(_call), timeout=120.0)
