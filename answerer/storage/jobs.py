@@ -160,6 +160,31 @@ async def insert_crawl_page(job_id: UUID, tenant_id: UUID, url: str, content: st
         )
 
 
+async def insert_crawl_http_error(
+    job_id: UUID, tenant_id: UUID, url: str, status_code: Optional[int]
+) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO crawl_http_errors (id, job_id, tenant_id, url, status_code, failed_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            """,
+            uuid4(), job_id, tenant_id, url, status_code,
+        )
+
+
+async def get_crawl_http_error_urls(job_id: UUID, tenant_id: UUID) -> list[dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT url, status_code, failed_at FROM crawl_http_errors "
+            "WHERE job_id = $1 AND tenant_id = $2 ORDER BY failed_at",
+            job_id, tenant_id,
+        )
+    return [dict(r) for r in rows]
+
+
 async def get_crawl_page_urls(job_id: UUID, tenant_id: UUID) -> list[dict]:
     """Return URLs and crawl times for a job — no content (can be large)."""
     pool = await get_pool()

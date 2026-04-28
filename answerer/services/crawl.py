@@ -170,10 +170,12 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
                         continue
                     logger.warning("Crawl %s: timeout after 2 attempts, skipping: %s", job_id, url)
                     pages_skipped_http += 1
+                    await jobs_store.insert_crawl_http_error(job_id, tenant_id, url, None)
                     return [], None
                 except httpx.RequestError as e:
                     logger.warning("Crawl %s: network error %s: %s", job_id, url, e)
                     pages_skipped_http += 1
+                    await jobs_store.insert_crawl_http_error(job_id, tenant_id, url, None)
                     return [], None
 
             # Retry transient HTTP errors (429, 5xx) with backoff
@@ -188,11 +190,13 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
                 except httpx.RequestError as e:
                     logger.warning("Crawl %s: network error on retry %s: %s", job_id, url, e)
                     pages_skipped_http += 1
+                    await jobs_store.insert_crawl_http_error(job_id, tenant_id, url, None)
                     return [], None
 
             if resp.status_code != 200:
                 logger.warning("Crawl %s: HTTP %d skipping: %s", job_id, resp.status_code, url)
                 pages_skipped_http += 1
+                await jobs_store.insert_crawl_http_error(job_id, tenant_id, url, resp.status_code)
                 return [], None
             content_type = resp.headers.get("content-type", "")
             if "text/html" not in content_type and "text/plain" not in content_type:
@@ -291,6 +295,11 @@ async def _run_crawl(job_id: UUID, tenant_id: UUID, seed_url: str, max_pages: in
         await jobs_store.update_job_status(
             job_id, "completed", completed=datetime.now(timezone.utc), progress=final_progress,
         )
+        try:
+            await jobs_store.create_job(tenant_id, "index", url=str(job_id))
+            logger.info("Crawl %s: auto-queued index job for tenant %s", job_id, tenant_id)
+        except Exception as idx_exc:
+            logger.error("Crawl %s: failed to auto-queue index job: %s", job_id, idx_exc)
 
     except Exception as exc:
         logger.exception("Crawl %s failed with unhandled exception after %d pages", job_id, pages_crawled)

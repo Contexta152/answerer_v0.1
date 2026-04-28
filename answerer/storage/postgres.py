@@ -77,6 +77,16 @@ async def create_tables() -> None:
             )
         """)
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS crawl_http_errors (
+                id          UUID PRIMARY KEY,
+                job_id      UUID NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+                tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                url         TEXT NOT NULL,
+                status_code INTEGER,
+                failed_at   TIMESTAMPTZ NOT NULL
+            )
+        """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS question_log (
                 request_id UUID PRIMARY KEY,
                 tenant_id UUID NOT NULL,

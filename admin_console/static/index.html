@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Console</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='black'/><text x='50' y='68' font-family='sans-serif' font-size='56' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="stylesheet" href="/static/style.css?v=5">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     .an-row{display:flex;gap:16px;flex-wrap:wrap}.an-row .card{flex:1;min-width:260px}
@@ -49,48 +49,91 @@
   </div>
 </div>
 
-<!-- ── Top bar ─────────────────────────────────────────────────────────────── -->
-<div class="topbar" id="topbar" style="display:none">
-  <div class="logo"></div>
-  <h1>Admin Console</h1>
-  <div class="topbar-right">
-    <span class="topbar-tenant" id="sidebar-tenant-id"></span>
-    <span class="topbar-user" id="logged-in-as"></span>
-  </div>
-</div>
-
 <!-- ── App shell ───────────────────────────────────────────────────────────── -->
 <div id="app-shell" hidden>
 
   <div id="sidebar">
-    <nav id="sidebar-nav">
-      <div class="nav-group-label">Dashboard</div>
-      <button class="nav-item active" data-tab="overview"><span class="nav-icon">◎</span> Overview</button>
-      <button class="nav-item" data-tab="settings"><span class="nav-icon">⚙</span> Settings</button>
+    <div class="sidebar-brand">GroundedAnswers</div>
+    <nav id="sidebar-nav" aria-label="Primary navigation">
 
-      <div class="nav-group-label">KnowledgeBase</div>
-      <button class="nav-item" data-tab="kbs"><span class="nav-icon">◎</span> KnowledgeBases</button>
-      <button class="nav-item" data-tab="guardrails"><span class="nav-icon">🛡</span> Guardrails</button>
-      <button class="nav-item" data-tab="curated"><span class="nav-icon">✦</span> Curated Answers</button>
+      <button class="nav-item active" data-tab="overview">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        <span>Dashboard</span>
+      </button>
 
-      <div class="nav-group-label">Widget</div>
-      <button class="nav-item" data-tab="demoquestions"><span class="nav-icon">💬</span> Demo Questions</button>
+      <div class="nav-group-label">Manage</div>
 
-      <div class="nav-group-label">Testing</div>
-      <button class="nav-item" data-tab="testquery"><span class="nav-icon">⊕</span> Test Query</button>
+      <button class="nav-item" data-tab="settings">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3"/><path d="M12 18.5v3"/><path d="M4.8 4.8l2.1 2.1"/><path d="M17.1 17.1l2.1 2.1"/><path d="M2.5 12h3"/><path d="M18.5 12h3"/><path d="M4.8 19.2l2.1-2.1"/><path d="M17.1 6.9l2.1-2.1"/></svg>
+        <span>Settings</span>
+      </button>
 
-      <div class="nav-group-label">Monitoring</div>
-      <button class="nav-item" data-tab="qlog"><span class="nav-icon">◈</span> Question Log</button>
-      <button class="nav-item" data-tab="analytics"><span class="nav-icon">▲</span> Analytics</button>
-      <button class="nav-item" data-tab="insights"><span class="nav-icon">◈</span> Query Insights</button>
-      <button class="nav-item" data-tab="costs"><span class="nav-icon">$</span> Cost Dashboard</button>
-      <button class="nav-item" data-tab="recommendations"><span class="nav-icon">✦</span> Recommendations</button>
-      <button class="nav-item" data-tab="gaplist"><span class="nav-icon">⊕</span> Gap Analysis</button>
-      <button class="nav-item" data-tab="jobs"><span class="nav-icon">⚡</span> Jobs</button>
+      <button class="nav-item" data-tab="kbs">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 5.5v16"/><path d="M8 7h8"/><path d="M8 11h7"/></svg>
+        <span>KnowledgeBases</span>
+      </button>
+
+      <button class="nav-item" data-tab="guardrails">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-2.9 8.5-7 10-4.1-1.5-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        <span>Guardrails</span>
+      </button>
+
+      <button class="nav-item" data-tab="curated">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.6 5.1L19 10l-5.4 1.9L12 17l-1.6-5.1L5 10l5.4-1.9z"/><path d="M19 16l.7 2.2L22 19l-2.3.8L19 22l-.7-2.2L16 19l2.3-.8z"/></svg>
+        <span>Curated Answers</span>
+      </button>
+
+      <button class="nav-item" data-tab="demoquestions">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 0 1 4.6 1c0 1.8-2.3 2.1-2.3 4"/><path d="M12 17h.01"/></svg>
+        <span>Demo Questions</span>
+      </button>
+
+      <div class="nav-group-label">Report</div>
+
+      <button class="nav-item" data-tab="testquery">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/></svg>
+        <span>Test Query</span>
+      </button>
+
+      <button class="nav-item" data-tab="qlog">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8"/><path d="M9 2h6v4H9z"/><rect x="5" y="4" width="14" height="18" rx="2"/><path d="M8 11h8"/><path d="M8 15h8"/><path d="M8 19h5"/></svg>
+        <span>Question Log</span>
+      </button>
+
+      <button class="nav-item" data-tab="analytics">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
+        <span>Analytics</span>
+      </button>
+
+      <button class="nav-item" data-tab="insights">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16"/><path d="M4 12h10"/><path d="M4 19h7"/><circle cx="17" cy="16" r="3"/><path d="M19.5 18.5L22 21"/></svg>
+        <span>Query Insights</span>
+      </button>
+
+      <button class="nav-item" data-tab="costs">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3-4 3 2 4-6"/><path d="M16 7h2v2"/></svg>
+        <span>Cost Dashboard</span>
+      </button>
+
+      <button class="nav-item" data-tab="recommendations">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.2 4.5L19 8.2l-3.5 3.4.8 4.8L12 14.1l-4.3 2.3.8-4.8L5 8.2l4.8-.7z"/><path d="M5 21h14"/></svg>
+        <span>Recommendations</span>
+      </button>
+
+      <button class="nav-item" data-tab="gaplist">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h6"/><path d="M14 6h6"/><path d="M4 12h4"/><path d="M12 12h8"/><path d="M4 18h8"/><path d="M16 18h4"/><path d="M10 6l4 12"/></svg>
+        <span>Gap Analysis</span>
+      </button>
+
+      <button class="nav-item" data-tab="jobs">
+        <svg class="nav-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="2"/><path d="M9 6V4h6v2"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>
+        <span>Jobs</span>
+      </button>
+
     </nav>
 
     <div class="sidebar-footer">
-      <span class="sidebar-user" id="sidebar-user-label"></span>
+      <div class="sidebar-user-pill" id="sidebar-user-label"></div>
       <button class="btn btn-secondary btn-full btn-sm" id="logout-btn">Sign out</button>
     </div>
   </div>
@@ -100,7 +143,7 @@
     <!-- OVERVIEW ─────────────────────────────────────────────────────────── -->
     <div id="tab-overview" class="tab-panel active">
       <div class="page-header">
-        <h1>Overview</h1>
+        <h1>Dashboard</h1>
         <p>Tenant info, quota, and usage at a glance.</p>
       </div>
 
@@ -732,12 +775,9 @@ async function login() {
     refreshToken = data.refresh_token;
     const claims = parseJWT(accessToken);
     tenantId = claims.tenant_id || null;
-    document.getElementById('logged-in-as').textContent      = email;
     document.getElementById('sidebar-user-label').textContent = email;
-    document.getElementById('sidebar-tenant-id').textContent  = tenantId ? tenantId.substring(0,8)+'…' : '—';
     document.getElementById('tenant-id').textContent          = tenantId || '—';
     document.getElementById('login-screen').style.display    = 'none';
-    document.getElementById('topbar').style.display          = 'flex';
     document.getElementById('app-shell').removeAttribute('hidden');
     loadOverview();
   } catch(e) {
@@ -755,7 +795,6 @@ async function logout() {
   } catch(_) {}
   accessToken = null; refreshToken = null; tenantId = null;
   document.getElementById('app-shell').setAttribute('hidden', '');
-  document.getElementById('topbar').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('password').value = '';
   showTab('overview');
@@ -775,12 +814,9 @@ document.getElementById('logout-btn').addEventListener('click', logout);
   if (!claims.tenant_id) return;
   accessToken = token;
   tenantId    = claims.tenant_id;
-  document.getElementById('logged-in-as').textContent      = claims.sub || 'vendor-admin';
   document.getElementById('sidebar-user-label').textContent = claims.sub || 'vendor-admin';
-  document.getElementById('sidebar-tenant-id').textContent  = tenantId.substring(0,8)+'…';
   document.getElementById('tenant-id').textContent          = tenantId;
   document.getElementById('login-screen').style.display    = 'none';
-  document.getElementById('topbar').style.display          = 'flex';
   document.getElementById('app-shell').removeAttribute('hidden');
   loadOverview();
 })();
@@ -1160,7 +1196,6 @@ function kbLogHtml(kb, indexDetail) {
     const idxTotal = ip.pages_total;
     if (idxPages != null) lines.push(entry(`${Number(idxPages).toLocaleString()}${idxTotal ? ' / ' + Number(idxTotal).toLocaleString() : ''} pages vectorized`));
     if (ip.chunks_created   != null) lines.push(entry(`${Number(ip.chunks_created).toLocaleString()} chunks`));
-    if (ip.vectors_upserted != null) lines.push(entry(`${Number(ip.vectors_upserted).toLocaleString()} vectors`));
     const tokens = ip.embed_tokens ?? kb.embed_tokens;
     if (tokens != null) lines.push(entry(`${Number(tokens).toLocaleString()} embed tokens`));
     if (ip.pages_failed) lines.push(entry(`${ip.pages_failed} pages failed`, 'warn'));
@@ -1287,6 +1322,10 @@ async function loadKBs() {
             <summary class="kb-pages-summary" onclick="loadKBPages(event, '${esc(kb.job_id)}')">Pages crawled</summary>
             <div class="kb-pages-list" id="kb-pages-list-${esc(kb.job_id)}"></div>
           </details>
+          <details class="kb-pages-details" id="kb-http-errors-details-${esc(kb.job_id)}">
+            <summary class="kb-pages-summary" onclick="loadKBHttpErrors(event, '${esc(kb.job_id)}')">HTTP Errors</summary>
+            <div class="kb-pages-list" id="kb-http-errors-list-${esc(kb.job_id)}"></div>
+          </details>
           <div id="kb-msg-${esc(kb.job_id)}" class="kb-msg-area"></div>
         </div>`;
       }).join('');
@@ -1334,6 +1373,31 @@ async function loadKBPages(e, crawlJobId) {
     } else {
       listEl.innerHTML = `<div class="kb-pages-count">${items.length.toLocaleString()} pages</div>` +
         items.map(p => `<div class="kb-page-row"><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a></div>`).join('');
+    }
+    listEl.dataset.loaded = '1';
+  } catch(err) {
+    listEl.innerHTML = `<div class="kb-pages-empty msg-err">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+async function loadKBHttpErrors(e, crawlJobId) {
+  const listEl = document.getElementById(`kb-http-errors-list-${crawlJobId}`);
+  if (!listEl) return;
+  if (listEl.dataset.loaded === '1') return;
+  listEl.innerHTML = '<div class="kb-pages-loading">Loading…</div>';
+  try {
+    const res  = await api(`${ANSWERER_URL}/v1/tenants/${tenantId}/crawl/${crawlJobId}/http-errors`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed');
+    const items = data.items || [];
+    if (!items.length) {
+      listEl.innerHTML = '<div class="kb-pages-empty">No HTTP errors recorded.</div>';
+    } else {
+      listEl.innerHTML = `<div class="kb-pages-count">${items.length.toLocaleString()} URLs</div>` +
+        items.map(p => {
+          const code = p.status_code ? ` <span style="color:var(--error)">${p.status_code}</span>` : '';
+          return `<div class="kb-page-row"><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a>${code}</div>`;
+        }).join('');
     }
     listEl.dataset.loaded = '1';
   } catch(err) {

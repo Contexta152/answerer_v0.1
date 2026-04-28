@@ -125,6 +125,26 @@ async def list_crawl_pages(
     return {"items": [{"url": r["url"], "crawled_at": r["crawled_at"].isoformat() if r["crawled_at"] else None} for r in rows]}
 
 
+@router.get("/v1/tenants/{tenant_id}/crawl/{job_id}/http-errors")
+async def list_crawl_http_errors(
+    tenant_id: UUID,
+    job_id: UUID,
+    _: None = Depends(_require_service_or_admin),
+):
+    from storage.jobs import get_crawl_http_error_urls
+    rows = await get_crawl_http_error_urls(job_id, tenant_id)
+    return {
+        "items": [
+            {
+                "url": r["url"],
+                "status_code": r["status_code"],
+                "failed_at": r["failed_at"].isoformat() if r["failed_at"] else None,
+            }
+            for r in rows
+        ]
+    }
+
+
 @router.delete("/v1/tenants/{tenant_id}/crawl/{job_id}", status_code=204)
 async def delete_crawl(
     tenant_id: UUID,
