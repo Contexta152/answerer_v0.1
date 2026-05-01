@@ -29,10 +29,21 @@ def _now_ms() -> int:
     return int(time.monotonic() * 1000)
 
 
+def _canonical_url(url: str) -> str:
+    if url.startswith("http://"):
+        url = "https://" + url[7:]
+    return url
+
+
 def _build_prompt(question: str, chunks: list[Chunk], system_prompt: str | None = None) -> str:
     if chunks:
+        url_to_n: dict[str, int] = {}
+        for c in chunks:
+            canon = _canonical_url(c.source)
+            if canon not in url_to_n:
+                url_to_n[canon] = len(url_to_n) + 1
         context = "\n\n".join(
-            f"[Source {i+1}: {c.source}]\n{c.text}" for i, c in enumerate(chunks)
+            f"[Source {url_to_n[_canonical_url(c.source)]}: {_canonical_url(c.source)}]\n{c.text}" for c in chunks
         )
     else:
         context = "No relevant context found."
@@ -451,7 +462,7 @@ async def ask_stream(tenant_id: UUID, question: str) -> AsyncIterator[str]:
     llm_ms = _now_ms() - llm_start
     total_ms = _now_ms() - start_ms
 
-    unique_sources = list(dict.fromkeys(c.source for c in chunks if c.source))
+    unique_sources = list(dict.fromkeys(_canonical_url(c.source) for c in chunks if c.source))
     yield _sse_event("done", {"source": "rag", "request_id": str(request_id), "sources": unique_sources})
 
     # 7. Log non-blocking

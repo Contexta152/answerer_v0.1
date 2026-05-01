@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Medical Query Injector — 1000 Questions</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
+
+    header { background: #1a1a2e; padding: 16px 24px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #2a2a4a; }
+    header h1 { font-size: 1.2rem; font-weight: 600; color: #fff; }
+    .med-badge { background: #e74c3c; color: #fff; font-weight: 700; font-size: 0.85rem; padding: 4px 10px; border-radius: 4px; }
+
+    .config-panel { background: #111; border-bottom: 1px solid #222; padding: 14px 24px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .config-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 0.75rem; color: #999; }
+    .config-panel input { background: #1a1a1a; border: 1px solid #333; color: #e0e0e0; padding: 6px 10px; border-radius: 6px; font-size: 0.82rem; }
+    .config-panel input.wide { width: 340px; }
+    .config-panel input.medium { width: 240px; }
+    .config-panel input.short { width: 100px; }
+    button.btn { padding: 8px 16px; border-radius: 6px; border: none; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+    button.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.run { background: #1a6b3a; color: #fff; }
+    button.stop { background: #c0392b; color: #fff; }
+    button.clear { background: #222; color: #aaa; }
+
+    .stats-bar { display: flex; background: #111; border-bottom: 1px solid #222; flex-wrap: wrap; }
+    .stat { flex: 1; min-width: 90px; padding: 10px 16px; border-right: 1px solid #1a1a1a; }
+    .stat:last-child { border-right: none; }
+    .stat .lbl { font-size: 0.68rem; color: #555; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+    .stat .val { font-size: 1.3rem; font-weight: 700; color: #fff; }
+    .stat .val.green { color: #27ae60; }
+    .stat .val.red { color: #e74c3c; }
+    .stat .val.blue { color: #3498db; }
+    .stat .val.amber { color: #f39c12; }
+    .stat .val.purple { color: #9b59b6; }
+    .stat .val.teal { color: #1abc9c; }
+    .stat .val.orange { color: #e67e22; }
+
+    .progress-wrap { background: #111; padding: 10px 24px; border-bottom: 1px solid #222; }
+    .progress-track { background: #222; border-radius: 99px; height: 6px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #1a6b3a, #27ae60); border-radius: 99px; width: 0%; transition: width 0.25s; }
+    .progress-label { font-size: 0.73rem; color: #666; margin-top: 5px; }
+
+    .cat-section { margin: 16px 24px 0; }
+    .cat-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #555; padding: 6px 0 8px; border-bottom: 1px solid #1a1a1a; margin-bottom: 8px; }
+
+    .results { padding: 0 24px 24px; display: flex; flex-direction: column; gap: 6px; }
+    .result-card { background: #111; border: 1px solid #1e1e1e; border-radius: 6px; overflow: hidden; }
+    .result-card.success { border-left: 3px solid #27ae60; }
+    .result-card.error { border-left: 3px solid #e74c3c; }
+    .result-card.pending { border-left: 3px solid #333; }
+    .result-card.running { border-left: 3px solid #3498db; animation: pulse-b 1s infinite; }
+    @keyframes pulse-b { 0%,100% { border-left-color: #3498db; } 50% { border-left-color: #1a4060; } }
+
+    .card-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; user-select: none; }
+    .card-q { font-size: 0.82rem; font-weight: 500; color: #ccc; flex: 1; padding-right: 10px; }
+    .card-q .q-num { color: #555; font-weight: 400; margin-right: 6px; font-size: 0.75rem; }
+    .card-meta { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .badge { padding: 2px 7px; border-radius: 99px; font-size: 0.68rem; font-weight: 600; }
+    .badge.ok { background: #1a3d2b; color: #27ae60; }
+    .badge.err { background: #3d1a1a; color: #e74c3c; }
+    .badge.wait { background: #1a1a1a; color: #444; }
+    .badge.run { background: #1a2d3d; color: #3498db; }
+    .badge.src-rag { background: #1a2a3d; color: #5dade2; }
+    .badge.src-curated { background: #1e2d1a; color: #58d68d; }
+    .badge.src-guardrail { background: #2d1a1a; color: #e59866; }
+    .badge.src-error { background: #3d1a1a; color: #e74c3c; }
+    .time-lbl { font-size: 0.72rem; color: #555; }
+    .chevron { color: #444; transition: transform 0.18s; font-size: 0.7rem; }
+    .chevron.open { transform: rotate(180deg); }
+
+    .card-body { display: none; padding: 10px 12px; border-top: 1px solid #161616; font-size: 0.8rem; line-height: 1.65; color: #aaa; }
+    .card-body.open { display: block; }
+    .card-body .answer-text { white-space: pre-wrap; word-break: break-word; }
+    .card-body .err-msg { color: #e74c3c; font-family: monospace; font-size: 0.78rem; }
+    .card-body .meta-row { margin-top: 8px; font-size: 0.7rem; color: #444; display: flex; gap: 16px; flex-wrap: wrap; }
+
+    .spinner { display: inline-block; width: 11px; height: 11px; border: 2px solid #2a2a2a; border-top-color: #3498db; border-radius: 50%; animation: spin 0.65s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #empty-state { padding: 48px 24px; text-align: center; color: #333; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="med-badge">MED</div>
+  <h1>Medical Query Injector — 1000 Questions</h1>
+</header>
+
+<div class="config-panel">
+  <label>API Base URL <input id="baseUrl" class="wide" value="https://answerer-848760828618.us-central1.run.app" /></label>
+  <label>Tenant ID <input id="tenantId" class="medium" value="ed8fe501-86dc-443a-bc53-7e8f48db82c3" /></label>
+  <label>Widget Key <input id="widgetKey" class="medium" placeholder="wk_..." /></label>
+  <label>Concurrency <input id="concurrency" class="short" type="number" value="8" min="1" max="30" /></label>
+  <button class="btn run" id="runBtn" onclick="startRun()">Run 1000 Queries</button>
+  <button class="btn stop" id="stopBtn" onclick="stopRun()" style="display:none">Stop</button>
+  <button class="btn clear" onclick="clearResults()">Clear</button>
+</div>
+
+<div class="stats-bar">
+  <div class="stat"><div class="lbl">Total</div><div class="val" id="sTotal">0</div></div>
+  <div class="stat"><div class="lbl">Done</div><div class="val green" id="sDone">0</div></div>
+  <div class="stat"><div class="lbl">Errors</div><div class="val red" id="sErrors">0</div></div>
+  <div class="stat"><div class="lbl">Avg Latency</div><div class="val blue" id="sAvgMs">—</div></div>
+  <div class="stat"><div class="lbl">P95 Latency</div><div class="val amber" id="sP95">—</div></div>
+  <div class="stat"><div class="lbl">Fastest</div><div class="val" id="sMin">—</div></div>
+  <div class="stat"><div class="lbl">Slowest</div><div class="val" id="sMax">—</div></div>
+  <div class="stat"><div class="lbl">RAG</div><div class="val teal" id="sSrcRag">0</div></div>
+  <div class="stat"><div class="lbl">Curated</div><div class="val green" id="sSrcCurated">0</div></div>
+  <div class="stat"><div class="lbl">Guardrail</div><div class="val orange" id="sSrcGuardrail">0</div></div>
+</div>
+
+<div class="progress-wrap" id="progressWrap" style="display:none">
+  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="progress-label" id="progressLabel">0 / 1000</div>
+</div>
+
+<div id="empty-state">Configure credentials above and click Run 1000 Queries</div>
+<div id="results"></div>
+
+<script>
+const QUESTIONS = [
+  // ── Medicines ──────────────────────────────────────────────────────────
+  "What is ibuprofen used for?",
+  "What are the side effects of paracetamol?",
+  "How does aspirin work?",
+  "What is amoxicillin prescribed for?",
+  "Can I take ibuprofen on an empty stomach?",
+  "What is the maximum daily dose of paracetamol?",
+  "What are the side effects of statins?",
+  "How long does it take for metformin to work?",
+  "What is omeprazole used for?",
+  "Can I drink alcohol while taking antibiotics?",
+  "What is lisinopril used for?",
+  "How do beta-blockers work?",
+  "What is sertraline used for?",
+  "What are the side effects of methotrexate?",
+  "How does warfarin work?",
+  "What is losartan used for?",
+  "Can I take ibuprofen and paracetamol together?",
+  "What is prednisolone used for?",
+  "How do SSRIs work?",
+  "What is atorvastatin prescribed for?",
+  "What are the side effects of ramipril?",
+  "How does codeine work?",
+  "What is lansoprazole used for?",
+  "Can I take naproxen with paracetamol?",
+  "What is amlodipine used for?",
+  "How do ACE inhibitors work?",
+  "What is fluoxetine used for?",
+  "What are the side effects of gabapentin?",
+  "How does metformin work?",
+  "What is clopidogrel used for?",
+  "What are the side effects of amoxicillin?",
+  "How do diuretics work?",
+  "What is levothyroxine used for?",
+  "Can I stop taking antibiotics early if I feel better?",
+  "What is bisoprolol used for?",
+  "How does tramadol work?",
+  "What is azithromycin used for?",
+  "What are the side effects of doxycycline?",
+  "How do proton pump inhibitors work?",
+  "What is cetirizine used for?",
+  "What are the side effects of prednisone?",
+  "How does morphine work?",
+  "What is salbutamol used for?",
+  "Can I take antihistamines with other medications?",
+  "What is spironolactone used for?",
+  "How do calcium channel blockers work?",
+  "What is fluconazole used for?",
+  "What are the side effects of lithium?",
+  "How does digoxin work?",
+  "What is tamsulosin used for?",
+  "What are the side effects of metronidazole?",
+  "How do NSAIDs work?",
+  "What is quetiapine used for?",
+  "Can I take naproxen long-term?",
+  "What is allopurinol used for?",
+  "How does furosemide work?",
+  "What is duloxetine used for?",
+  "What are the side effects of clindamycin?",
+  "How do anticoagulants work?",
+  "What is venlafaxine used for?",
+  "What are the side effects of carbamazepine?",
+  "How does insulin work?",
+  "What is nifedipine used for?",
+  "Can I take melatonin with other medications?",
+  "What is olanzapine used for?",
+  "How do angiotensin receptor blockers work?",
+  "What is pregabalin used for?",
+  "What are the side effects of simvastatin?",
+  "How does heparin work?",
+  "What is citalopram used for?",
+  "What are the side effects of naproxen?",
+  "How do corticosteroids work?",
+  "What is risperidone used for?",
+  "Can I take vitamin D supplements with my medications?",
+  "What is doxazosin used for?",
+  "How does rivaroxaban work?",
+  "What is mirtazapine used for?",
+  "What are the side effects of sulfasalazine?",
+  "How do antiretrovirals work?",
+  "What is esomeprazole used for?",
+  "What are the side effects of amiodarone?",
+  "How does carvedilol work?",
+  "What is topiramate used for?",
+  "Can I take ibuprofen while pregnant?",
+  "What is propranolol used for?",
+  "How do triptans work for migraines?",
+  "What is hydroxychloroquine used for?",
+  "What are the side effects of clonazepam?",
+  "How does fentanyl work?",
+  "What is ezetimibe used for?",
+  "What are the side effects of tacrolimus?",
+  "How do antiplatelet drugs work?",
+  "What is aripiprazole used for?",
+  "Can I take iron supplements with other medications?",
+  "What is enalapril used for?",
+  "How does bupropion work?",
+  "What is ondansetron used for?",
+  "What are the side effects of levetiracetam?",
+  "How do antihistamines work?",
+  "What is sitagliptin used for?",
+  "What are the side effects of trimethoprim?",
+  "How does oxycodone work?",
+  "What is loperamide used for?",
+  "Can I take antacids with other medications?",
+  "What is candesartan used for?",
+  "How do benzodiazepines work?",
+  "What is pioglitazone used for?",
+  "What are the side effects of alendronate?",
+  "How does dabigatran work?",
+  "What is chlorpromazine used for?",
+  "What are the side effects of ciprofloxacin?",
+  "How do opioids cause constipation?",
+  "What is mometasone used for?",
+  "Can I take St John's Wort with antidepressants?",
+  "What is indapamide used for?",
+  "How does colchicine work?",
+  "What is valproate used for?",
+  "What are the side effects of finasteride?",
+  "How does apixaban work?",
+  "What is liraglutide used for?",
+  "What are the side effects of sertraline in the first week?",
+  "How do thiazide diuretics work?",
+  "What is montelukast used for?",
+  "Can I take codeine if I'm breastfeeding?",
+  "What is sildenafil used for?",
+  "How does lithium work for bipolar disorder?",
+  "What is budesonide used for?",
+  "What are the side effects of oral contraceptives?",
+  "How do proton pump inhibitors interact with other medications?",
+  "What is escitalopram used for?",
+  "What are the side effects of nitrates?",
+  "How does desmopressin work?",
+  "What is empagliflozin used for?",
+  "Can I take melatonin every night long-term?",
+  "What is rosuvastatin used for?",
+  "How does baclofen work?",
+  "What is chloramphenicol used for?",
+  "What are the side effects of hydrochlorothiazide?",
+  "How do immunosuppressants work?",
+  "What is labetalol used for?",
+  "What are the side effects of varenicline?",
+  "How does acetazolamide work?",
+  "What is rivastigmine used for?",
+  "Can I take magnesium supplements safely?",
+  "What is sacubitril/valsartan used for?",
+  "How does clomipramine work?",
+  "What is beclometasone used for?",
+  "What are the side effects of rifampicin?",
+  "How does oseltamivir work?",
+  "What is finasteride used for in prostate conditions?",
+  // ── Conditions ────────────────────────────────────────────────────────
+  "What is type 1 diabetes?",
+  "What causes high blood pressure?",
+  "What is atrial fibrillation?",
+  "How is asthma diagnosed?",
+  "What is rheumatoid arthritis?",
+  "What causes Crohn's disease?",
+  "What is multiple sclerosis?",
+  "How is epilepsy diagnosed?",
+  "What is COPD?",
+  "What causes fibromyalgia?",
+  "What is lupus?",
+  "How is coeliac disease diagnosed?",
+  "What is Parkinson's disease?",
+  "What causes migraines?",
+  "What is ankylosing spondylitis?",
+  "How is Alzheimer's disease diagnosed?",
+  "What is irritable bowel syndrome?",
+  "What causes eczema?",
+  "What is psoriasis?",
+  "How is hypothyroidism diagnosed?",
+  "What is heart failure?",
+  "What causes kidney stones?",
+  "What is polycystic ovary syndrome?",
+  "How is sleep apnoea diagnosed?",
+  "What is endometriosis?",
+  "What causes gout?",
+  "What is chronic kidney disease?",
+  "How is bipolar disorder diagnosed?",
+  "What is deep vein thrombosis?",
+  "What causes osteoporosis?",
+  "What is diverticular disease?",
+  "How is schizophrenia diagnosed?",
+  "What is a pulmonary embolism?",
+  "What causes rosacea?",
+  "What is Graves' disease?",
+  "How is ADHD diagnosed in adults?",
+  "What is peripheral artery disease?",
+  "What causes restless leg syndrome?",
+  "What is Huntington's disease?",
+  "How is ovarian cancer diagnosed?",
+  "What is Raynaud's phenomenon?",
+  "What causes shingles?",
+  "What is sarcoidosis?",
+  "How is prostate cancer diagnosed?",
+  "What is aortic stenosis?",
+  "What causes interstitial cystitis?",
+  "What is myasthenia gravis?",
+  "How is bowel cancer diagnosed?",
+  "What is polycythaemia vera?",
+  "What causes trigeminal neuralgia?",
+  "What is vasculitis?",
+  "How is macular degeneration diagnosed?",
+  "What is primary biliary cholangitis?",
+  "What causes chronic fatigue syndrome?",
+  "What is temporal arteritis?",
+  "How is pancreatic cancer diagnosed?",
+  "What is haemophilia?",
+  "What causes pericarditis?",
+  "What is systemic sclerosis?",
+  "How is lung cancer diagnosed?",
+  "What is Behcet's disease?",
+  "What causes polymyalgia rheumatica?",
+  "How is breast cancer diagnosed?",
+  "What is hereditary haemochromatosis?",
+  "What causes narcolepsy?",
+  "What is Addison's disease?",
+  "How is leukaemia diagnosed?",
+  "What is myocarditis?",
+  "What causes acromegaly?",
+  "What is antiphospholipid syndrome?",
+  "How is lymphoma diagnosed?",
+  "What is Cushing's syndrome?",
+  "What causes portal hypertension?",
+  "What is a transient ischaemic attack?",
+  "How is myeloma diagnosed?",
+  "What is Sjögren's syndrome?",
+  "What causes hyperthyroidism?",
+  "What is non-alcoholic fatty liver disease?",
+  "What is primary hyperaldosteronism?",
+  "What causes spontaneous pneumothorax?",
+  "What is von Willebrand disease?",
+  "How is dementia diagnosed?",
+  "What is metabolic syndrome?",
+  "What causes alopecia areata?",
+  "What is idiopathic pulmonary fibrosis?",
+  "What is Tourette syndrome?",
+  "What is myotonic dystrophy?",
+  "How is HIV diagnosed?",
+  "What is Wilson's disease?",
+  "What causes Dupuytren's contracture?",
+  "What is amyloidosis?",
+  "How is thyroid cancer diagnosed?",
+  "What is osteomyelitis?",
+  "What causes cervical cancer?",
+  "What is porphyria?",
+  "How is type 2 diabetes managed long term?",
+  "What is Gilbert's syndrome?",
+  "What causes optic neuritis?",
+  "How is bladder cancer diagnosed?",
+  "What is hyperlipidaemia?",
+  "What causes essential tremor?",
+  "What is neurofibromatosis?",
+  "What causes carpal tunnel syndrome?",
+  "What is Marfan syndrome?",
+  "How is osteoarthritis managed?",
+  "What is erythema nodosum?",
+  "What is autoimmune hepatitis?",
+  "What is cholangiocarcinoma?",
+  "What causes glaucoma?",
+  "What is spinal stenosis?",
+  "What causes chronic sinusitis?",
+  "What is primary sclerosing cholangitis?",
+  "How is chronic pancreatitis managed?",
+  "What is transverse myelitis?",
+  "What causes plantar fasciitis?",
+  "What is Gaucher disease?",
+  "What is retroperitoneal fibrosis?",
+  "What causes cluster headaches?",
+  "What is Stiff person syndrome?",
+  "How is polycystic kidney disease managed?",
+  "What is Brugada syndrome?",
+  "What is mastocytosis?",
+  "How is hypertrophic cardiomyopathy managed?",
+  "What is an acoustic neuroma?",
+  "What causes hemiplegic migraine?",
+  "What is Friedreich's ataxia?",
+  "What is tuberous sclerosis?",
+  "What is a phaeochromocytoma?",
+  "What is progressive supranuclear palsy?",
+  "What is Castleman disease?",
+  "What causes autoimmune thyroid disease?",
+  "What is a ganglion cyst?",
+  "What causes a Baker's cyst?",
+  "What is frozen shoulder?",
+  "How is tennis elbow treated?",
+  "What is trigger finger?",
+  "What is a herniated disc?",
+  "How does sciatica develop?",
+  "What is piriformis syndrome?",
+  "What is tarsal tunnel syndrome?",
+  "What is CRPS?",
+  "What is iliotibial band syndrome?",
+  "What is meralgia paraesthetica?",
+  "What is a labral tear in the hip?",
+  "What is shin splints?",
+  "What is patellofemoral pain syndrome?",
+  "What is thoracic outlet syndrome?",
+  "What is cubital tunnel syndrome?",
+  "What is osteochondritis dissecans?",
+  "What is Scheuermann's kyphosis?",
+  "What is lumbar canal stenosis?",
+  "What is spondylolisthesis?",
+  "What is cervical radiculopathy?",
+  "What is degenerative disc disease?",
+  "What is reactive arthritis?",
+  "What is calcium pyrophosphate deposition?",
+  "What is haemarthrosis?",
+  "What is avascular necrosis of the femoral head?",
+  "What is osteogenesis imperfecta?",
+  "What is Paget's disease of bone?",
+  "What is iron deficiency anaemia?",
+  "What is pernicious anaemia?",
+  "What is thalassaemia?",
+  "How is sickle cell disease managed?",
+  "What is glucose-6-phosphate dehydrogenase deficiency?",
+  "What is thrombotic thrombocytopenic purpura?",
+  "What is autoimmune haemolytic anaemia?",
+  "What is paroxysmal nocturnal haemoglobinuria?",
+  "What is aplastic anaemia?",
+  "What is primary myelofibrosis?",
+  "What is essential thrombocythaemia?",
+  "What is chronic myeloid leukaemia?",
+  "What is Waldenström's macroglobulinaemia?",
+  "What is hairy cell leukaemia?",
+  "What is Burkitt lymphoma?",
+  "What is diffuse large B-cell lymphoma?",
+  "What is mantle cell lymphoma?",
+  "What is follicular lymphoma?",
+  "What is Hodgkin lymphoma?",
+  "What is acute myeloid leukaemia?",
+  "What is acute lymphoblastic leukaemia?",
+  "What is myelodysplastic syndrome?",
+  "What is chronic lymphocytic leukaemia?",
+  // ── Tests & Diagnostics ───────────────────────────────────────────────
+  "What does a full blood count measure?",
+  "What is a lipid profile test?",
+  "How is a blood glucose test done?",
+  "What is an HbA1c test?",
+  "What does a kidney function test measure?",
+  "How is a liver function test interpreted?",
+  "What is a thyroid function test?",
+  "How is a urine dipstick test done?",
+  "What is a 24-hour urine collection test?",
+  "How is a urine culture performed?",
+  "What is a chest X-ray used for?",
+  "How is an ECG interpreted?",
+  "What is an echocardiogram?",
+  "How is a stress echocardiogram performed?",
+  "What is a cardiac MRI?",
+  "How is a coronary angiogram done?",
+  "What is a CT coronary angiogram?",
+  "How is an ankle brachial pressure index measured?",
+  "What is a Holter monitor?",
+  "How is a tilt table test performed?",
+  "What is a sleep study?",
+  "How is a spirometry test done?",
+  "What is a peak flow measurement?",
+  "How is a bronchoscopy performed?",
+  "What is a CT pulmonary angiogram?",
+  "How is a V/Q scan done?",
+  "What is a lung function test?",
+  "How is a pleural biopsy performed?",
+  "What is a mediastinoscopy?",
+  "How is an endoscopy performed?",
+  "What is a colonoscopy?",
+  "How is a barium swallow done?",
+  "What is an MRI of the abdomen?",
+  "How is a liver biopsy performed?",
+  "What is an ERCP?",
+  "How is a capsule endoscopy done?",
+  "What is a hydrogen breath test?",
+  "How is a faecal calprotectin test done?",
+  "What is faecal immunochemical testing?",
+  "How is a coeliac antibody test performed?",
+  "What is a C-reactive protein test?",
+  "How is an ESR test done?",
+  "What is an immunoglobulin test?",
+  "How is an anti-nuclear antibody test performed?",
+  "What is anti-double-stranded DNA testing?",
+  "How is a complement level test done?",
+  "What is a rheumatoid factor test?",
+  "How is anti-CCP testing performed?",
+  "What is an ANCA test?",
+  "How is an HLA-B27 test done?",
+  "What is a bone profile test?",
+  "How is a DEXA scan performed?",
+  "What is a bone marrow biopsy?",
+  "How is a joint aspiration done?",
+  "What is synovial fluid analysis?",
+  "How is a nerve conduction study performed?",
+  "What is an EMG test?",
+  "How is a lumbar puncture done?",
+  "What is a visual evoked potential test?",
+  "How is an EEG performed?",
+  "What is a brain MRI?",
+  "How is a CT scan of the head done?",
+  "What is a PET scan used for?",
+  "How is a SPECT scan performed?",
+  "What is a carotid Doppler ultrasound?",
+  "How is a transcranial Doppler performed?",
+  "What is a neuropsychological assessment?",
+  "What is a Mini-Mental State Examination?",
+  "What is a PSA test?",
+  "How is a testicular ultrasound performed?",
+  "What is a semen analysis?",
+  "How is a prostate biopsy done?",
+  "What is a cystoscopy?",
+  "How is urodynamic testing performed?",
+  "What is a renal ultrasound?",
+  "How is a renal biopsy done?",
+  "What is an FSH test?",
+  "How is an LH test done?",
+  "What is an oestrogen test?",
+  "How is a progesterone level measured?",
+  "What is a testosterone test?",
+  "How is an AMH test performed?",
+  "What is a pelvic ultrasound?",
+  "How is a hysteroscopy done?",
+  "What is a laparoscopy?",
+  "How is a colposcopy performed?",
+  "What is a smear test?",
+  "What is a mammogram?",
+  "How is a breast biopsy done?",
+  "How is a skin biopsy performed?",
+  "What is patch testing for allergies?",
+  "How is a skin prick test done?",
+  "What is serum-specific IgE testing?",
+  "What is a sweat test for cystic fibrosis?",
+  "What is whole exome sequencing?",
+  "What is chromosomal karyotyping?",
+  "What is a BRCA test?",
+  "How is a stool culture performed?",
+  "What is a Helicobacter pylori test?",
+  "How is a urea breath test done?",
+  "What is a faecal elastase test?",
+  "How is a serum amylase test done?",
+  "What is a lipase test?",
+  "How is a serum ferritin level measured?",
+  "What is a serum folate test?",
+  "How is a vitamin B12 level measured?",
+  "What is a vitamin D test?",
+  "How is a cortisol test done?",
+  "What is a short synacthen test?",
+  "How is a dexamethasone suppression test performed?",
+  "What is a glucose tolerance test?",
+  "What is a C-peptide test?",
+  "What is a GAD antibody test?",
+  "What is a thyroglobulin antibody test?",
+  "How is thyroid peroxidase antibody testing performed?",
+  "What is a parathyroid hormone test?",
+  "How is a calcium level measured?",
+  "What is a phosphate test?",
+  "How is a magnesium level measured?",
+  "What is an aldosterone test?",
+  "How is a renin level measured?",
+  "What is a chromogranin A test?",
+  "What is a 24-hour urinary catecholamines test?",
+  "What is a gastrin level test?",
+  "What is a CA-125 test?",
+  "How is an AFP level measured?",
+  "What is a beta-HCG test?",
+  "What is a troponin test?",
+  "How is a BNP level measured?",
+  "What is a D-dimer test?",
+  "How is a prothrombin time measured?",
+  "What is an APTT test?",
+  "What is a lactate dehydrogenase test?",
+  "What is a uric acid blood test?",
+  // ── Treatments & Procedures ───────────────────────────────────────────
+  "How is atrial fibrillation treated?",
+  "What is cardiac ablation?",
+  "How is heart failure treated?",
+  "What is a coronary bypass operation?",
+  "How is aortic valve replacement performed?",
+  "What is a transcatheter aortic valve implantation?",
+  "How is a pacemaker implanted?",
+  "What is an implantable cardioverter defibrillator?",
+  "How is cardiac resynchronisation therapy done?",
+  "What is carotid endarterectomy?",
+  "How is a peripheral arterial angioplasty done?",
+  "What is an aortic aneurysm repair?",
+  "How is hypertension treated?",
+  "How is stroke treated acutely?",
+  "What is thrombolysis for stroke?",
+  "How is a mechanical thrombectomy done?",
+  "What is deep brain stimulation?",
+  "How is epilepsy treated surgically?",
+  "What is vagus nerve stimulation?",
+  "How is a brain tumour treated?",
+  "What is stereotactic radiosurgery?",
+  "How is Parkinson's disease treated?",
+  "What is levodopa therapy?",
+  "How is multiple sclerosis treated?",
+  "How is spinal cord injury rehabilitated?",
+  "What is intrathecal drug delivery?",
+  "How is peripheral neuropathy treated?",
+  "What is a nerve block injection?",
+  "How is pain treated with spinal cord stimulation?",
+  "What is a nerve decompression operation?",
+  "How is sciatica treated?",
+  "What is epidural steroid injection?",
+  "How is a discectomy performed?",
+  "What is spinal fusion surgery?",
+  "How is a laminectomy done?",
+  "What is a hip replacement operation?",
+  "How is knee replacement performed?",
+  "What is a shoulder replacement?",
+  "How is an ACL repair done?",
+  "What is arthroscopic knee surgery?",
+  "How is a meniscal repair performed?",
+  "What is cartilage transplantation?",
+  "How is a tendon repair performed?",
+  "What is total ankle replacement?",
+  "How is hallux valgus treated?",
+  "How is bowel cancer treated?",
+  "What is laparoscopic colectomy?",
+  "How is rectal cancer treated?",
+  "What is anterior resection surgery?",
+  "How is a colostomy formed?",
+  "What is ileostomy surgery?",
+  "How is Crohn's disease treated surgically?",
+  "What is bowel resection?",
+  "How is appendicitis treated?",
+  "What is a cholecystectomy?",
+  "What is ERCP for gallstones?",
+  "How is a liver resection done?",
+  "What is liver transplantation?",
+  "How is a pancreatoduodenectomy performed?",
+  "What is distal pancreatectomy?",
+  "How is a splenectomy done?",
+  "What is hernia repair surgery?",
+  "How is a hiatus hernia repaired?",
+  "What is fundoplication?",
+  "How is bariatric surgery performed?",
+  "What is a sleeve gastrectomy?",
+  "How is a gastric bypass done?",
+  "How is oesophageal cancer treated?",
+  "How is gastric cancer treated?",
+  "What is a total gastrectomy?",
+  "How is kidney cancer treated?",
+  "What is partial nephrectomy?",
+  "How is bladder cancer treated?",
+  "What is radical cystectomy?",
+  "How is prostate cancer treated with radiotherapy?",
+  "What is radical prostatectomy?",
+  "How is testicular cancer treated?",
+  "How is renal transplantation done?",
+  "What is peritoneal dialysis?",
+  "How is haemodialysis performed?",
+  "What is lithotripsy for kidney stones?",
+  "How is ureteroscopy done?",
+  "What is percutaneous nephrolithotomy?",
+  "How is lung cancer treated?",
+  "What is lobectomy for lung cancer?",
+  "What is video-assisted thoracoscopic surgery?",
+  "How is pleural effusion treated?",
+  "What is chemical pleurodesis?",
+  "What is endobronchial valve treatment for emphysema?",
+  "How is pulmonary hypertension treated?",
+  "What is lung transplantation?",
+  "How is breast cancer treated surgically?",
+  "What is a mastectomy?",
+  "How is sentinel lymph node biopsy done?",
+  "What is breast reconstruction surgery?",
+  "What is neoadjuvant chemotherapy?",
+  "How is adjuvant radiotherapy given?",
+  "What is hormone therapy for breast cancer?",
+  "How is HER2-positive breast cancer treated?",
+  "What is immunotherapy for cancer?",
+  "How is CAR-T cell therapy given?",
+  "What is bone marrow transplantation?",
+  "How is stem cell transplantation done?",
+  "What is proton beam therapy?",
+  "How is brachytherapy administered?",
+  "What is radiofrequency ablation for tumours?",
+  "How is cryotherapy for cancer done?",
+  "What is photodynamic therapy?",
+  "How is cervical cancer treated?",
+  "What is LLETZ treatment?",
+  "How is endometrial cancer treated?",
+  "What is hysterectomy?",
+  "How is ovarian cancer treated?",
+  "How is endometriosis treated surgically?",
+  "What is a laparoscopic myomectomy?",
+  "How is ectopic pregnancy treated?",
+  "What is salpingectomy?",
+  "How is subfertility investigated?",
+  "What is intrauterine insemination?",
+  "How is IVF performed?",
+  "What is ICSI fertilisation?",
+  "How is egg freezing done?",
+  "What is preimplantation genetic diagnosis?",
+  "How is a vasectomy performed?",
+  "What is tubal ligation?",
+  "How is erectile dysfunction treated?",
+  "What is gender-affirming surgery?",
+  "How is depression treated with talking therapy?",
+  "What is cognitive behavioural therapy?",
+  "How is PTSD treated?",
+  "What is EMDR therapy?",
+  "How is OCD treated?",
+  "What is dialectical behaviour therapy?",
+  "How is anorexia nervosa treated?",
+  "What is electroconvulsive therapy?",
+  "How is ketamine used for depression?",
+  "What is repetitive transcranial magnetic stimulation?",
+  // ── Symptoms ─────────────────────────────────────────────────────────
+  "What causes chest pain?",
+  "Why do I have shortness of breath?",
+  "What causes palpitations?",
+  "Why do I feel dizzy?",
+  "What causes fainting?",
+  "Why do I have leg swelling?",
+  "What causes leg pain when walking?",
+  "Why do I have cold hands and feet?",
+  "What causes a racing heart?",
+  "Why do I have high blood pressure readings at home?",
+  "What causes persistent cough?",
+  "Why am I coughing up blood?",
+  "What causes wheezing?",
+  "Why do I have noisy breathing?",
+  "What causes night sweats?",
+  "Why do I wake up breathless?",
+  "What causes pleuritic chest pain?",
+  "What causes haemoptysis?",
+  "Why do I feel breathless when lying flat?",
+  "What causes nausea?",
+  "Why do I have bloating?",
+  "What causes upper abdominal pain?",
+  "Why do I have reflux symptoms?",
+  "What causes difficulty swallowing?",
+  "Why do I have blood in my stool?",
+  "What causes change in bowel habits?",
+  "Why do I have pale stools?",
+  "What causes dark urine?",
+  "Why do I have jaundice?",
+  "What causes lower abdominal pain?",
+  "Why do I have pelvic pain?",
+  "What causes rectal bleeding?",
+  "Why do I have mucus in my stool?",
+  "What causes constipation?",
+  "Why do I have diarrhoea?",
+  "What causes alternating constipation and diarrhoea?",
+  "Why do I have loss of appetite?",
+  "What causes unintentional weight loss?",
+  "Why do I have difficulty eating?",
+  "What causes headaches?",
+  "Why do I have migraines?",
+  "What causes a thunderclap headache?",
+  "Why do I have facial pain?",
+  "What causes double vision?",
+  "Why do I have visual floaters?",
+  "What causes sudden loss of vision?",
+  "Why do I have eye pain?",
+  "What causes a drooping eyelid?",
+  "Why do I have red eyes?",
+  "What causes memory loss?",
+  "Why do I have confusion?",
+  "What causes personality change?",
+  "Why do I have speech difficulties?",
+  "What causes tremor?",
+  "Why do I have loss of balance?",
+  "What causes weakness on one side of the body?",
+  "Why do I have numbness in my hands?",
+  "What causes pins and needles?",
+  "Why do I have difficulty walking?",
+  "What causes joint pain?",
+  "Why do I have morning stiffness?",
+  "What causes joint swelling?",
+  "Why do I have back pain?",
+  "What causes neck pain?",
+  "Why do I have shoulder pain?",
+  "What causes hip pain?",
+  "Why do I have knee pain?",
+  "What causes foot pain?",
+  "Why do I have muscle cramps?",
+  "What causes excessive thirst?",
+  "Why do I urinate frequently?",
+  "What causes burning on urination?",
+  "Why do I have blood in my urine?",
+  "What causes urinary incontinence?",
+  "Why do I have difficulty starting urination?",
+  "What causes nocturia?",
+  "Why do I have frothy urine?",
+  "What causes pain in the kidney area?",
+  "Why do I have testicular pain?",
+  "What causes vaginal discharge?",
+  "Why do I have irregular periods?",
+  "What causes heavy periods?",
+  "Why do I have painful periods?",
+  "What causes postmenopausal bleeding?",
+  "Why do I have hot flushes?",
+  "What causes vaginal dryness?",
+  "What causes breast lump?",
+  "Why do I have nipple discharge?",
+  "What causes fatigue?",
+  "Why do I feel tired all the time?",
+  "What causes insomnia?",
+  "Why do I feel excessively sleepy during the day?",
+  "What causes poor concentration?",
+  "Why do I have mood swings?",
+  "What causes anxiety symptoms?",
+  "Why do I feel depressed?",
+  "What causes panic attacks?",
+  "Why do I feel disconnected from reality?",
+  "What causes a skin rash?",
+  "Why do I have itchy skin?",
+  "What causes hives?",
+  "Why do I have dry skin patches?",
+  "What causes a red face?",
+  "Why do I have excessive sweating?",
+  "What causes hair loss?",
+  "Why do I have brittle nails?",
+  "What causes skin discolouration?",
+  "Why do I have easy bruising?",
+  "What causes nosebleeds?",
+  "Why do I have bleeding gums?",
+  "What causes mouth ulcers?",
+  "Why do I have a sore throat?",
+  "What causes ear pain?",
+  "Why do I have ringing in my ears?",
+  "What causes hearing loss?",
+  "Why do I have a blocked nose?",
+  "What causes loss of smell?",
+  "Why do I have loss of taste?",
+  "What causes a lump in the neck?",
+  "What causes a swollen thyroid?",
+  "Why do I have a hoarse voice?",
+  "What causes snoring?",
+  "Why do I stop breathing in my sleep?",
+  "What causes unexplained bruising?",
+  "Why do I have lymph node swelling?",
+  "Why do I have weight gain?",
+  "What causes bone pain?",
+  "Why do I have cold intolerance?",
+  "What causes heat intolerance?",
+  "Why do I have excessive hunger?",
+  "What causes extreme fatigue with exercise?",
+  "Why do I have pain after eating?",
+  "What causes shoulder tip pain?",
+  "Why do I have groin pain?",
+  "What causes testicular swelling?",
+  "Why do I have reduced libido?",
+  "What causes infertility?",
+  "Why do I have recurrent miscarriages?",
+  "What causes morning sickness?",
+  "Why do I have swollen ankles in pregnancy?",
+  "What causes pelvic girdle pain in pregnancy?",
+  "Why do I have headaches in pregnancy?",
+  "What causes bleeding in early pregnancy?",
+  "Why do I have high blood pressure in pregnancy?",
+  "What causes itching in pregnancy?",
+  "Why do I have heartburn in pregnancy?",
+  "What causes contractions before 37 weeks?",
+  "Why does my child have recurrent ear infections?",
+  "What causes febrile seizures in children?",
+  "What causes failure to thrive in infants?",
+  "What causes a high temperature in children?",
+  "Why does my child have tummy aches?",
+  "What causes bedwetting in older children?",
+  "What causes pain in the jaw?",
+  "Why do I have pain when chewing?",
+  "What causes dry mouth?",
+  "Why do I have burning mouth?",
+  "What causes tooth sensitivity?",
+  "What causes a lump on the gum?",
+  "Why do I have bad breath?",
+  "What causes pain in the eye socket?",
+  "Why do I have flashing lights in my vision?",
+  "What causes a white spot on the eye?",
+  "Why do I have excessive tearing?",
+  "What causes photophobia?",
+  "What causes night blindness?",
+  "Why do I have dry eyes?",
+  "What causes anosmia?",
+  "Why do I have a persistent metallic taste?",
+  "What causes tongue swelling?",
+  "Why do I have jaw clicking?",
+  "What causes TMJ pain?",
+  "Why do I have facial numbness?",
+  // ── Preventive Health ─────────────────────────────────────────────────
+  "What vaccinations should adults have?",
+  "How often should I have a blood pressure check?",
+  "What is a healthy BMI?",
+  "How much exercise do I need each week?",
+  "What is a healthy diet for heart health?",
+  "How do I lower my cholesterol naturally?",
+  "What cancer screening programmes should I attend?",
+  "How often should I have a cervical smear?",
+  "What age should I start bowel cancer screening?",
+  "How do I check my breasts for abnormalities?",
+  "How do I do a testicular self-examination?",
+  "What is the recommended salt intake per day?",
+  "How does smoking affect cardiovascular health?",
+  "What are the safe alcohol limits per week?",
+  "How does obesity affect health risks?",
+  "How do I reduce my risk of type 2 diabetes?",
+  "What supplements should I take during pregnancy?",
+  "How do I prevent osteoporosis?",
+  "What are the benefits of regular exercise for mental health?",
+  "How do I maintain a healthy weight?",
+  "What is the evidence for vitamin D supplementation?",
+  "How do I protect my skin from sun damage?",
+  "How does stress affect physical health?",
+  "What are the signs of skin cancer to look for?",
+  "How do I reduce my risk of bowel cancer?",
+  "What preventive measures reduce stroke risk?",
+  "How do I keep my heart healthy?",
+  "What is the role of omega-3 in heart health?",
+  "How do I improve my sleep quality?",
+  "What foods reduce inflammation?",
+  "How does gut health affect overall wellbeing?",
+  "What are the effects of prolonged sitting?",
+  "How do I prevent falls in older age?",
+  "What cognitive exercises help prevent dementia?",
+  "How do I maintain bone density?",
+  "What is the role of fibre in preventing bowel disease?",
+  "How do I reduce my risk of kidney disease?",
+  "What are the health benefits of stopping smoking?",
+  "How does hydration affect kidney health?",
+  "What is the link between sugar intake and disease?",
+  "How do I reduce blood pressure without medication?",
+  "What role does exercise play in cancer prevention?",
+  "How do I protect my joints as I age?",
+  "What are the benefits of the Mediterranean diet?",
+  "How do I check my moles regularly?",
+  "What is the evidence for intermittent fasting?",
+  "How do I prevent urinary tract infections?",
+  "What are the health effects of air pollution?",
+  "How do I protect my hearing over time?",
+  "What is the role of gut microbiome in immunity?",
+  "How do I keep my liver healthy?",
+  "What preventive measures reduce Alzheimer's risk?",
+  "How do I maintain healthy blood sugar levels?",
+  "What are the dangers of ultra-processed foods?",
+  "How does alcohol affect liver health?",
+  "What is the evidence for fish oil supplements?",
+  "How do I prevent deep vein thrombosis on long flights?",
+  "What are the health benefits of regular walking?",
+  "How does poor oral hygiene affect systemic health?",
+  "What are the risks of sedentary work?",
+  "How do I maintain a healthy immune system?",
+  "What is the role of zinc in immune function?",
+  "How does sleep deprivation affect metabolism?",
+  "What are the benefits of mindfulness for health?",
+  "How does stress affect the gut?",
+  "What are the long-term risks of obesity?",
+  "How do I prevent varicose veins?",
+  "What is the role of magnesium in health?",
+  "How does caffeine affect cardiovascular health?",
+  "What preventive measures reduce fracture risk in osteoporosis?",
+  "How do I prevent cataracts?",
+  "What is the evidence for probiotics?",
+  "How does exercise affect bone density?",
+  "What are the risks of long-term use of antacids?",
+  "What are the benefits of strength training in older age?",
+  "How does thyroid function affect weight?",
+  "What preventive health checks should men over 50 have?",
+  "What health checks should women over 50 have?",
+  "How do I reduce my risk of prostate cancer?",
+  "How does diet affect inflammatory arthritis?",
+  "What is the recommended daily protein intake?",
+  "How does iron deficiency develop?",
+  "What are the signs of nutritional deficiency?",
+  "How do I prevent recurrent kidney stones?",
+  "What is the role of antioxidants in health?",
+  "How does chronic inflammation cause disease?",
+  "What are the benefits of reducing red meat consumption?",
+  "How do I reduce my risk of ovarian cancer?",
+  "What are the effects of hormone replacement therapy?",
+  "How does perimenopause affect health?",
+  "What are the risks of long-term steroid use?",
+  "How do I support mental health in older age?",
+  "What is the role of vitamin K in bone health?",
+  "How do I prevent peripheral arterial disease?",
+  "What are the early signs of skin cancer?",
+  "How do I protect my overall health as I age?",
+  // ── More Symptoms ────────────────────────────────────────────────────
+  "What causes redness and warmth in a joint?",
+  "Why do I have difficulty breathing through my nose?",
+  "What causes a lump under the skin?",
+  "Why do I have pain in my calf muscle?",
+  "What causes a clicking sensation in my knee?",
+  "Why do I have swelling in only one leg?",
+  "What causes pain that worsens at night?",
+  "Why do I have pain when pressing on my abdomen?",
+  "What causes a feeling of incomplete bowel emptying?",
+  "Why do I have pain that radiates down my arm?",
+  "What causes a sensation of something stuck in my throat?",
+  "Why do I have pain between my shoulder blades?",
+  "What causes pain in my heel?",
+  "Why do I have difficulty climbing stairs?",
+  "What causes pain worse with deep breathing?",
+  "Why do I have a feeling of chest tightness?",
+  "What causes recurrent abdominal cramps?",
+  "Why do I have fluid retention?",
+  "What causes excessive gas and flatulence?",
+  "Why do I have pain when bending forward?",
+  "What causes a constant low-grade temperature?",
+  "Why do I have pain in my big toe?",
+  "Why do I have difficulty raising my arms above my head?",
+  "What causes a tingling sensation in my face?",
+  "Why do I have night cramps in my legs?",
+  "What causes a pulling sensation in my groin?",
+  "Why do I have pain when swallowing liquids?",
+  "What causes pain in my ear when opening my mouth?",
+  "Why do I feel bloated after every meal?",
+  "What causes sudden hearing loss in one ear?",
+  "Why do I have pain in my elbow?",
+  "What causes recurrent episodes of dizziness?",
+  "Why do I have difficulty reading small print?",
+  "What causes pain when sitting for long periods?",
+  "Why do I have a bulge in my groin?",
+  "What causes pain in my shin bones?",
+  "Why do I have pain on the outside of my knee?",
+  "What causes pain in my wrist when typing?",
+  "Why do I have difficulty gripping objects?",
+  "What causes a sudden sharp pain in my chest?",
+  "What causes a feeling of pressure behind my eyes?",
+  "Why do I have pain in my tailbone?",
+  "What causes painful urination in men?",
+  "Why do I have pain under my ribs on the right side?",
+  "What causes pain in the back of my head?",
+  "Why do I have unexplained muscle weakness?",
+  "What causes profuse sweating during exercise?",
+  "Why do I have recurrent skin infections?",
+  "What causes a yellow tinge to the whites of my eyes?",
+  "Why do I have pain after drinking alcohol?",
+  "What causes a persistent lump in my throat feeling?",
+  "Why do I have swollen fingers in the morning?",
+  "What causes intermittent visual loss?",
+  "Why do I have abnormal hair growth on my face?",
+  "What causes a burning sensation in my feet?",
+  "Why do I have muscle twitching?",
+  "What causes pain in my sternum?",
+  "Why do I have swollen lymph nodes in my armpit?",
+  "What causes a sensation of my heart skipping a beat?",
+  "Why do I feel my heart racing when I stand up?",
+  "What causes pain in my left arm?",
+  "Why do I have jaw pain with chest pain?",
+  "What causes sudden confusion in an elderly person?",
+  "Why do I have a metallic taste when taking medication?",
+  "What causes sudden weakness in one hand?",
+  "Why do I have recurrent cold sores?",
+  "What causes a deep ache in my bones?",
+  "Why do I have a persistent bruise that won't heal?",
+  "What causes itching without a visible rash?",
+  "Why do I have pain in my lower back that wakes me at night?",
+  "What causes difficulty swallowing my own saliva?",
+  "Why do I have a pulsating feeling in my abdomen?",
+  "What causes recurrent fainting in a teenager?",
+  "Why do I have yellow nails?",
+  "What causes a persistent runny nose?",
+  "Why do I have pain only on one side of my head?",
+  "What causes a swollen red eyelid?",
+  "Why do I have pain when I take a deep breath?",
+  "What causes numbness in my face?",
+  "Why do I have a clicking jaw?",
+  "What causes a feeling of fullness after eating very little?",
+  "Why do I have difficulty remembering words?",
+  "What causes sudden loss of hearing?",
+  "Why do I have leg weakness after walking a short distance?",
+  "What causes swollen ankles in young people?",
+  "Why do I have dark rings under my eyes?",
+  "What causes a persistent hiccup?",
+  "Why do I have pain in the soles of my feet in the morning?",
+  "What causes a hoarse voice in a child?",
+  "Why do I have painless blood in my urine?",
+  "What causes episodes of severe sweating and pallor?",
+  "Why do I have pain in my knee going down stairs?",
+  "What causes a soft lump at the back of my knee?",
+  "Why do I have difficulty turning my head?",
+  "What causes recurrent canker sores?",
+  "Why do I have pain in my hip when lying down?",
+  "What causes a pulsating headache?",
+  "Why do I have difficulty with fine motor tasks?",
+  "What causes a red line up my arm?",
+  "Why do I have pain in my left shoulder after eating?",
+  "What causes an unexplained rash on my torso?",
+  "Why do I have pain in my testicle that comes and goes?",
+  "What causes a feeling of fullness in my ear?",
+  "Why do I have a sudden change in handwriting?",
+  "What causes pain in my jaw when eating hard food?",
+  "Why do I have difficulty swallowing tablets?",
+  "What causes sudden onset of sneezing?",
+  "Why do I have a tremor only when I try to move?",
+  "What causes pain in my ankle without injury?",
+  "Why do I have recurrent urinary infections?",
+  "What causes intermittent blurred vision?",
+  "Why do I have abdominal pain that is worse before my period?",
+  "What causes a red swollen finger?",
+  "Why do I have pain in my lower back after sitting?",
+  "What causes calf pain at rest?",
+  "Why do I have a sensation of bugs crawling on my skin?",
+  "What causes painful feet at the end of the day?",
+  "Why do I have pain in my armpit?",
+  "What causes swelling of the face in the morning?",
+  "Why do I have a painful red eye with vision change?",
+  "What causes difficulty eating on one side of my mouth?",
+  "Why do I have a deep ache in my jaw?",
+  "What causes pain in my upper arm?",
+  "Why do I have a persistent itch in one ear?",
+  "What causes a swollen vein on my forehead?",
+  "Why do I have numbness in my saddle area?",
+  "What causes my toes to curl?",
+
+];
+
+const CATEGORIES = [
+  { label: "Medicines",                 start:   0, count: 150 },
+  { label: "Conditions",                start: 150, count: 200 },
+  { label: "Tests & Diagnostics",       start: 350, count: 148 },
+  { label: "Treatments & Procedures",   start: 498, count: 152 },
+  { label: "Symptoms",                  start: 650, count: 127 },
+  { label: "Preventive Health",         start: 777, count:  96 },
+  { label: "Further Symptoms",          start: 873, count: 127 },
+];
+
+let running = false;
+let aborted = false;
+let latencies = [];
+let doneCount = 0;
+let errCount = 0;
+const srcCounts = { rag: 0, curated: 0, guardrail: 0 };
+
+function stopRun() {
+  aborted = true;
+  document.getElementById('stopBtn').disabled = true;
+}
+
+function clearResults() {
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('empty-state').style.display = '';
+  latencies = [];
+  doneCount = 0;
+  errCount = 0;
+  srcCounts.rag = 0;
+  srcCounts.curated = 0;
+  srcCounts.guardrail = 0;
+  updateStats();
+  document.getElementById('progressWrap').style.display = 'none';
+}
+
+function updateStats() {
+  const total = doneCount + errCount;
+  document.getElementById('sTotal').textContent = total;
+  document.getElementById('sDone').textContent = doneCount;
+  document.getElementById('sErrors').textContent = errCount;
+  document.getElementById('sSrcRag').textContent = srcCounts.rag;
+  document.getElementById('sSrcCurated').textContent = srcCounts.curated;
+  document.getElementById('sSrcGuardrail').textContent = srcCounts.guardrail;
+  if (latencies.length) {
+    const sorted = [...latencies].sort((a,b) => a-b);
+    const avg = Math.round(latencies.reduce((a,b)=>a+b,0) / latencies.length);
+    const p95idx = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
+    const p95 = sorted[p95idx];
+    document.getElementById('sAvgMs').textContent = avg + 'ms';
+    document.getElementById('sP95').textContent = p95 + 'ms';
+    document.getElementById('sMin').textContent = sorted[0] + 'ms';
+    document.getElementById('sMax').textContent = sorted[sorted.length-1] + 'ms';
+  } else {
+    ['sAvgMs','sP95','sMin','sMax'].forEach(id => document.getElementById(id).textContent = '—');
+  }
+}
+
+function srcBadgeClass(src) {
+  if (!src) return 'badge wait';
+  return 'badge src-' + src;
+}
+
+function makeCard(globalIdx, question) {
+  const card = document.createElement('div');
+  card.className = 'result-card pending';
+  card.id = `card-${globalIdx}`;
+  card.innerHTML = `
+    <div class="card-header" onclick="toggleCard(${globalIdx})">
+      <div class="card-q"><span class="q-num">${globalIdx+1}.</span>${escHtml(question)}</div>
+      <div class="card-meta">
+        <span class="badge wait" id="badge-${globalIdx}">Waiting</span>
+        <span class="time-lbl" id="time-${globalIdx}"></span>
+        <span class="chevron" id="chev-${globalIdx}">▼</span>
+      </div>
+    </div>
+    <div class="card-body" id="body-${globalIdx}"></div>
+  `;
+  return card;
+}
+
+function toggleCard(idx) {
+  document.getElementById(`body-${idx}`).classList.toggle('open');
+  document.getElementById(`chev-${idx}`).classList.toggle('open');
+}
+
+function setRunning(idx) {
+  document.getElementById(`card-${idx}`).className = 'result-card running';
+  const badge = document.getElementById(`badge-${idx}`);
+  badge.className = 'badge run';
+  badge.innerHTML = '<span class="spinner"></span>';
+}
+
+function setDone(idx, ms, answer, src) {
+  document.getElementById(`card-${idx}`).className = 'result-card success';
+  const badge = document.getElementById(`badge-${idx}`);
+  badge.className = srcBadgeClass(src);
+  badge.textContent = src || 'ok';
+  document.getElementById(`time-${idx}`).textContent = ms + 'ms';
+  document.getElementById(`body-${idx}`).innerHTML =
+    `<div class="answer-text">${escHtml(answer)}</div>` +
+    `<div class="meta-row"><span>${ms}ms</span><span>source: ${src || '—'}</span></div>`;
+}
+
+function setError(idx, ms, msg) {
+  document.getElementById(`card-${idx}`).className = 'result-card error';
+  const badge = document.getElementById(`badge-${idx}`);
+  badge.className = 'badge err';
+  badge.textContent = 'ERR';
+  if (ms) document.getElementById(`time-${idx}`).textContent = ms + 'ms';
+  document.getElementById(`body-${idx}`).innerHTML = `<div class="err-msg">${escHtml(msg)}</div>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function runQuery(globalIdx, question, baseUrl, tenantId, widgetKey) {
+  if (aborted) return;
+  setRunning(globalIdx);
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`${baseUrl}/v1/tenants/${tenantId}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Widget-Key': widgetKey },
+      body: JSON.stringify({ question }),
+    });
+    const ms = Date.now() - t0;
+    if (!res.ok) {
+      const txt = await res.text();
+      setError(globalIdx, ms, `HTTP ${res.status}: ${txt}`);
+      errCount++;
+    } else {
+      const data = await res.json();
+      const answer = data.answer ?? JSON.stringify(data);
+      const src = data.source;
+      setDone(globalIdx, ms, answer, src);
+      latencies.push(ms);
+      doneCount++;
+      if (src && src in srcCounts) srcCounts[src]++;
+    }
+  } catch(e) {
+    const ms = Date.now() - t0;
+    setError(globalIdx, ms, e.message);
+    errCount++;
+  }
+  updateStats();
+}
+
+async function startRun() {
+  const baseUrl = document.getElementById('baseUrl').value.replace(/\/$/, '');
+  const tenantId = document.getElementById('tenantId').value.trim();
+  const widgetKey = document.getElementById('widgetKey').value.trim();
+  const concurrency = Math.max(1, Math.min(30, parseInt(document.getElementById('concurrency').value) || 8));
+
+  if (!tenantId || !widgetKey) { alert('Enter Tenant ID and Widget Key.'); return; }
+
+  aborted = false;
+  latencies = [];
+  doneCount = 0;
+  errCount = 0;
+  srcCounts.rag = 0;
+  srcCounts.curated = 0;
+  srcCounts.guardrail = 0;
+  updateStats();
+
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('runBtn').style.display = 'none';
+  document.getElementById('stopBtn').style.display = '';
+  document.getElementById('stopBtn').disabled = false;
+  document.getElementById('progressWrap').style.display = 'block';
+
+  // Build DOM: category headers + cards
+  const resultsEl = document.getElementById('results');
+  resultsEl.innerHTML = '';
+
+  CATEGORIES.forEach(cat => {
+    const section = document.createElement('div');
+    section.className = 'cat-section';
+    const title = document.createElement('div');
+    title.className = 'cat-title';
+    title.textContent = `${cat.label} (${cat.count})`;
+    section.appendChild(title);
+    for (let i = cat.start; i < cat.start + cat.count && i < QUESTIONS.length; i++) {
+      section.appendChild(makeCard(i, QUESTIONS[i]));
+    }
+    resultsEl.appendChild(section);
+  });
+
+  const total = QUESTIONS.length;
+  let next = 0;
+
+  async function worker() {
+    while (next < total && !aborted) {
+      const idx = next++;
+      await runQuery(idx, QUESTIONS[idx], baseUrl, tenantId, widgetKey);
+      const done = doneCount + errCount;
+      document.getElementById('progressFill').style.width = (done / total * 100) + '%';
+      document.getElementById('progressLabel').textContent = `${done} / ${total}`;
+    }
+  }
+
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+  document.getElementById('runBtn').style.display = '';
+  document.getElementById('stopBtn').style.display = 'none';
+  const done = doneCount + errCount;
+  document.getElementById('progressLabel').textContent = aborted
+    ? `Stopped at ${done} / ${total} — ${doneCount} ok, ${errCount} errors`
+    : `Complete — ${doneCount} ok, ${errCount} errors`;
+}
+</script>
+</body>
+</html>
