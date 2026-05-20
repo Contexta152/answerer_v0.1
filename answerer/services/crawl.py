@@ -46,10 +46,10 @@ async def start_crawl(
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     kb_count = await pg_store.count_active_crawl_jobs(tenant_id)
-    if kb_count >= 5:
+    if kb_count >= 9:
         raise HTTPException(
             status_code=409,
-            detail="Maximum of 5 knowledge bases allowed. Delete one to add another.",
+            detail="Maximum of 9 knowledge bases allowed. Delete one to add another.",
         )
 
     active = await jobs_store.get_active_job(tenant_id, "crawl")

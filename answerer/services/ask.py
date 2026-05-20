@@ -20,7 +20,7 @@ _SYSTEM_PROMPT = (
     "You are a helpful assistant.\n"
     "Answer the question using ONLY the information provided in the sources below.\n"
     "If the sources don't contain enough information to answer confidently, say so clearly.\n"
-    "Cite sources by number.\n\n"
+    "Cite sources inline using [N] notation (e.g. [1], [2]). Do not use any other citation format.\n\n"
     "Sources:\n{context}"
 )
 
@@ -43,7 +43,7 @@ def _build_prompt(question: str, chunks: list[Chunk], system_prompt: str | None 
             if canon not in url_to_n:
                 url_to_n[canon] = len(url_to_n) + 1
         context = "\n\n".join(
-            f"[Source {url_to_n[_canonical_url(c.source)]}: {_canonical_url(c.source)}]\n{c.text}" for c in chunks
+            f"[{url_to_n[_canonical_url(c.source)]}] {_canonical_url(c.source)}\n{c.text}" for c in chunks
         )
     else:
         context = "No relevant context found."

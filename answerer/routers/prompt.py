@@ -15,7 +15,7 @@ _DEFAULT_PROMPT = (
     "You are a helpful assistant.\n"
     "Answer the question using ONLY the information provided in the sources below.\n"
     "If the sources don't contain enough information to answer confidently, say so clearly.\n"
-    "Cite sources by number.\n\n"
+    "Cite sources inline using [N] notation (e.g. [1], [2]). Do not use any other citation format.\n\n"
     "Sources:\n{context}"
 )
 

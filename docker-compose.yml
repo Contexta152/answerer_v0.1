@@ -15,6 +15,12 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/adc.json
     volumes:
       - ${HOME}/.config/gcloud/application_default_credentials.json:/secrets/adc.json:ro
+    restart: on-failure
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+        delay: 10s
     depends_on:
       postgres:
         condition: service_healthy
@@ -27,6 +33,7 @@ services:
       POSTGRES_DB: answerer
       POSTGRES_USER: answerer
       POSTGRES_PASSWORD: answerer
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

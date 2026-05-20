@@ -1276,7 +1276,7 @@ async function loadKBs() {
     const d = await res.json();
     const items = d.items || [];
     const activeCount = items.filter(kb => kb.status !== 'failed').length;
-    const atLimit = activeCount >= 5;
+    const atLimit = activeCount >= 9;
 
     const addCard = document.getElementById('kbs-add-card');
     if (addCard) addCard.style.display = atLimit ? 'none' : '';
@@ -1296,7 +1296,7 @@ async function loadKBs() {
       } catch(_) {}
     }));
 
-    el.innerHTML = `<div class="kbs-count-label">${activeCount} / 5 knowledgebases used</div>` +
+    el.innerHTML = `<div class="kbs-count-label">${activeCount} / 9 knowledgebases used</div>` +
       items.map(kb => {
         const indexDetail = indexDetailsMap[kb.job_id] ?? null;
         const maxPages    = kb.progress?.pages_total ?? null;
