@@ -23,7 +23,7 @@
   var WIDGET_KEY  = sc && sc.getAttribute('data-widget-key');
   var ACCENT      = (sc && sc.getAttribute('data-accent-color'))   || '#1a56db';
   var POSITION    = (sc && sc.getAttribute('data-position'))       || 'bottom-center';
-  var PLACEHOLDER = (sc && sc.getAttribute('data-placeholder'))    || 'Ask a question…';
+  var PLACEHOLDER = (sc && sc.getAttribute('data-placeholder'))    || 'Ask us anything about your health...';
   var LABEL       = (sc && sc.getAttribute('data-label'))          || 'Ask a question';
   var GATEWAY     = (sc && sc.getAttribute('data-gateway-url'))    || 'https://widget-gateway-848760828618.us-central1.run.app';
   var VARIANT     = (sc && sc.getAttribute('data-widget-variant')) || 'nhs_blue';
@@ -206,7 +206,7 @@
       '.ga-inp{flex:1;border:1.5px solid rgba(0,0,0,.13);border-radius:8px;',
       'padding:9px 12px;font-size:.875rem;font-family:inherit;color:#1a1a2e;',
       'background:#fff;outline:none;transition:border-color .15s;}',
-      '.ga-inp:focus{border-color:' + ACCENT + ';}',
+      '.ga-inp:focus{border-color:' + ACCENT + ';outline:none;box-shadow:none;}',
       '.ga-inp::placeholder{color:#bbb;}',
       '.ga-sub{padding:9px 16px;background:' + ACCENT + ';color:#fff;border:none;',
       'border-radius:8px;font-size:.84rem;font-weight:600;font-family:inherit;',
@@ -255,6 +255,12 @@
         '<span class="ga-hdr-title">' + esc(LABEL) + '</span>' +
         '<button class="ga-x" aria-label="Close">×</button>' +
       '</div>' +
+      '<div id="ga-demo" style="display:none">' +
+        '<div class="ga-demo">' +
+          '<div class="ga-demo-lbl">Try asking</div>' +
+          '<div class="ga-demo-chips" id="ga-demo-chips"></div>' +
+        '</div>' +
+      '</div>' +
       '<div class="ga-body" id="ga-body">' +
         '<div class="ga-dots-wrap" id="ga-load" style="display:none">' +
           '<div class="ga-dots"><span></span><span></span><span></span></div>' +
@@ -265,12 +271,6 @@
         '<div class="ga-srcs" id="ga-srcs" style="display:none">' +
           '<div class="ga-srcs-lbl">Sources</div>' +
           '<ul id="ga-srcs-list"></ul>' +
-        '</div>' +
-      '</div>' +
-      '<div id="ga-demo" style="display:none">' +
-        '<div class="ga-demo">' +
-          '<div class="ga-demo-lbl">Try asking</div>' +
-          '<div class="ga-demo-chips" id="ga-demo-chips"></div>' +
         '</div>' +
       '</div>' +
       '<div class="ga-foot">' +
